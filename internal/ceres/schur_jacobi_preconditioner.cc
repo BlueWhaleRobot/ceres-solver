@@ -32,10 +32,9 @@
 
 #include <utility>
 #include <vector>
+
 #include "ceres/block_random_access_diagonal_matrix.h"
 #include "ceres/block_sparse_matrix.h"
-#include "ceres/collections_port.h"
-#include "ceres/internal/scoped_ptr.h"
 #include "ceres/linear_solver.h"
 #include "ceres/schur_eliminator.h"
 #include "glog/logging.h"
@@ -53,6 +52,7 @@ SchurJacobiPreconditioner::SchurJacobiPreconditioner(
   CHECK_GT(num_blocks, 0)
       << "Jacobian should have atleast 1 f_block for "
       << "SCHUR_JACOBI preconditioner.";
+  CHECK(options_.context != NULL);
 
   std::vector<int> blocks(num_blocks);
   for (int i = 0; i < num_blocks; ++i) {
@@ -75,8 +75,11 @@ void SchurJacobiPreconditioner::InitEliminator(
   eliminator_options.e_block_size = options_.e_block_size;
   eliminator_options.f_block_size = options_.f_block_size;
   eliminator_options.row_block_size = options_.row_block_size;
+  eliminator_options.context = options_.context;
   eliminator_.reset(SchurEliminatorBase::Create(eliminator_options));
-  eliminator_->Init(eliminator_options.elimination_groups[0], &bs);
+  const bool kFullRankETE = true;
+  eliminator_->Init(
+      eliminator_options.elimination_groups[0], kFullRankETE, &bs);
 }
 
 // Update the values of the preconditioner matrix and factorize it.

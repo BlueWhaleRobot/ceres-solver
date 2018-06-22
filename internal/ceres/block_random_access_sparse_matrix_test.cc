@@ -29,7 +29,9 @@
 // Author: sameeragarwal@google.com (Sameer Agarwal)
 
 #include <limits>
+#include <memory>
 #include <vector>
+
 #include "ceres/block_random_access_sparse_matrix.h"
 #include "ceres/internal/eigen.h"
 #include "glog/logging.h"
@@ -50,7 +52,7 @@ TEST(BlockRandomAccessSparseMatrix, GetCell) {
   blocks.push_back(5);
   const int num_rows = 3 + 4 + 5;
 
-  set< pair<int, int> > block_pairs;
+  set<pair<int, int>> block_pairs;
   int num_nonzeros = 0;
   block_pairs.insert(make_pair(0, 0));
   num_nonzeros += blocks[0] * blocks[0];
@@ -68,11 +70,9 @@ TEST(BlockRandomAccessSparseMatrix, GetCell) {
   EXPECT_EQ(m.num_rows(), num_rows);
   EXPECT_EQ(m.num_cols(), num_rows);
 
-  for (set<pair<int, int> >::const_iterator it = block_pairs.begin();
-       it != block_pairs.end();
-       ++it) {
-    const int row_block_id = it->first;
-    const int col_block_id = it->second;
+  for (const auto& block_pair : block_pairs) {
+    const int row_block_id = block_pair.first;
+    const int col_block_id = block_pair.second;
     int row;
     int col;
     int row_stride;
@@ -142,7 +142,7 @@ class BlockRandomAccessSparseMatrixTest : public ::testing::Test {
   virtual void SetUp() {
     vector<int> blocks;
     blocks.push_back(1);
-    set< pair<int, int> > block_pairs;
+    set<pair<int, int>> block_pairs;
     block_pairs.insert(make_pair(0, 0));
     m_.reset(new BlockRandomAccessSparseMatrix(blocks, block_pairs));
   }
@@ -170,7 +170,7 @@ class BlockRandomAccessSparseMatrixTest : public ::testing::Test {
   }
 
  private:
-  scoped_ptr<BlockRandomAccessSparseMatrix> m_;
+  std::unique_ptr<BlockRandomAccessSparseMatrix> m_;
 };
 
 TEST_F(BlockRandomAccessSparseMatrixTest, IntPairToLongOverflow) {

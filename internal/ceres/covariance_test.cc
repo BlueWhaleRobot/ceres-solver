@@ -33,7 +33,9 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <memory>
 #include <utility>
+
 #include "ceres/compressed_row_sparse_matrix.h"
 #include "ceres/cost_function.h"
 #include "ceres/covariance_impl.h"
@@ -202,7 +204,7 @@ TEST(CovarianceImpl, ComputeCovarianceSparsity) {
                          6, 7, 8, 9};
 
 
-  vector<pair<const double*, const double*> > covariance_blocks;
+  vector<pair<const double*, const double*>> covariance_blocks;
   covariance_blocks.push_back(make_pair(block1, block1));
   covariance_blocks.push_back(make_pair(block4, block4));
   covariance_blocks.push_back(make_pair(block2, block2));
@@ -285,7 +287,7 @@ TEST(CovarianceImpl, ComputeCovarianceSparsityWithConstantParameterBlock) {
                          3, 4, 5, 6,
                          3, 4, 5, 6};
 
-  vector<pair<const double*, const double*> > covariance_blocks;
+  vector<pair<const double*, const double*>> covariance_blocks;
   covariance_blocks.push_back(make_pair(block1, block1));
   covariance_blocks.push_back(make_pair(block4, block4));
   covariance_blocks.push_back(make_pair(block2, block2));
@@ -366,7 +368,7 @@ TEST(CovarianceImpl, ComputeCovarianceSparsityWithFreeParameterBlock) {
                          3, 4, 5, 6,
                          3, 4, 5, 6};
 
-  vector<pair<const double*, const double*> > covariance_blocks;
+  vector<pair<const double*, const double*>> covariance_blocks;
   covariance_blocks.push_back(make_pair(block1, block1));
   covariance_blocks.push_back(make_pair(block4, block4));
   covariance_blocks.push_back(make_pair(block2, block2));
@@ -404,7 +406,7 @@ TEST(CovarianceImpl, ComputeCovarianceSparsityWithFreeParameterBlock) {
 
 class CovarianceTest : public ::testing::Test {
  protected:
-  typedef map<const double*, pair<int, int> > BoundsMap;
+  typedef map<const double*, pair<int, int>> BoundsMap;
 
   virtual void SetUp() {
     double* x = parameters_;
@@ -493,7 +495,7 @@ class CovarianceTest : public ::testing::Test {
     // Generate all possible combination of block pairs and check if the
     // covariance computation is correct.
     for (int i = 0; i <= 64; ++i) {
-      vector<pair<const double*, const double*> > covariance_blocks;
+      vector<pair<const double*, const double*>> covariance_blocks;
       if (i & 1) {
         covariance_blocks.push_back(all_covariance_blocks_[0]);
       }
@@ -564,9 +566,8 @@ class CovarianceTest : public ::testing::Test {
     }
 
     int dof = 0;  // degrees of freedom = sum of LocalSize()s
-    for (BoundsMap::const_iterator iter = column_bounds.begin();
-         iter != column_bounds.end(); ++iter) {
-      dof = std::max(dof, iter->second.second);
+    for (const auto& bound : column_bounds) {
+      dof = std::max(dof, bound.second.second);
     }
     ConstMatrixRef expected(expected_covariance, dof, dof);
     double diff_norm = (expected.block(row_begin,
@@ -589,7 +590,7 @@ class CovarianceTest : public ::testing::Test {
 
   double parameters_[6];
   Problem problem_;
-  vector<pair<const double*, const double*> > all_covariance_blocks_;
+  vector<pair<const double*, const double*>> all_covariance_blocks_;
   BoundsMap column_bounds_;
   BoundsMap local_column_bounds_;
 };
@@ -629,14 +630,16 @@ TEST_F(CovarianceTest, NormalBehavior) {
   Covariance::Options options;
 
 #ifndef CERES_NO_SUITESPARSE
-  options.algorithm_type = SUITE_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = SUITE_SPARSE;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 #endif
 
   options.algorithm_type = DENSE_SVD;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 
-  options.algorithm_type = EIGEN_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = EIGEN_SPARSE;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 }
 
@@ -677,14 +680,16 @@ TEST_F(CovarianceTest, ThreadedNormalBehavior) {
   options.num_threads = 4;
 
 #ifndef CERES_NO_SUITESPARSE
-  options.algorithm_type = SUITE_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = SUITE_SPARSE;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 #endif
 
   options.algorithm_type = DENSE_SVD;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 
-  options.algorithm_type = EIGEN_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = EIGEN_SPARSE;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 }
 
@@ -726,14 +731,16 @@ TEST_F(CovarianceTest, ConstantParameterBlock) {
   Covariance::Options options;
 
 #ifndef CERES_NO_SUITESPARSE
-  options.algorithm_type = SUITE_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = SUITE_SPARSE;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 #endif
 
   options.algorithm_type = DENSE_SVD;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 
-  options.algorithm_type = EIGEN_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = EIGEN_SPARSE;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 }
 
@@ -781,14 +788,16 @@ TEST_F(CovarianceTest, LocalParameterization) {
   Covariance::Options options;
 
 #ifndef CERES_NO_SUITESPARSE
-  options.algorithm_type = SUITE_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = SUITE_SPARSE;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 #endif
 
   options.algorithm_type = DENSE_SVD;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 
-  options.algorithm_type = EIGEN_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = EIGEN_SPARSE;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 }
 
@@ -839,14 +848,17 @@ TEST_F(CovarianceTest, LocalParameterizationInTangentSpace) {
   Covariance::Options options;
 
 #ifndef CERES_NO_SUITESPARSE
-  options.algorithm_type = SUITE_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = SUITE_SPARSE;
+
   ComputeAndCompareCovarianceBlocksInTangentSpace(options, expected_covariance);
 #endif
 
   options.algorithm_type = DENSE_SVD;
   ComputeAndCompareCovarianceBlocksInTangentSpace(options, expected_covariance);
 
-  options.algorithm_type = EIGEN_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = EIGEN_SPARSE;
   ComputeAndCompareCovarianceBlocksInTangentSpace(options, expected_covariance);
 }
 
@@ -899,14 +911,17 @@ TEST_F(CovarianceTest, LocalParameterizationInTangentSpaceWithConstantBlocks) {
   Covariance::Options options;
 
 #ifndef CERES_NO_SUITESPARSE
-  options.algorithm_type = SUITE_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = SUITE_SPARSE;
+
   ComputeAndCompareCovarianceBlocksInTangentSpace(options, expected_covariance);
 #endif
 
   options.algorithm_type = DENSE_SVD;
   ComputeAndCompareCovarianceBlocksInTangentSpace(options, expected_covariance);
 
-  options.algorithm_type = EIGEN_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = EIGEN_SPARSE;
   ComputeAndCompareCovarianceBlocksInTangentSpace(options, expected_covariance);
 }
 
@@ -978,14 +993,16 @@ TEST_F(CovarianceTest, DenseCovarianceMatrixFromSetOfParameters) {
   covariance.GetCovarianceMatrix(parameter_blocks, expected_covariance);
 
 #ifndef CERES_NO_SUITESPARSE
-  options.algorithm_type = SUITE_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = SUITE_SPARSE;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 #endif
 
   options.algorithm_type = DENSE_SVD;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 
-  options.algorithm_type = EIGEN_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = EIGEN_SPARSE;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 }
 
@@ -1005,14 +1022,16 @@ TEST_F(CovarianceTest, DenseCovarianceMatrixFromSetOfParametersThreaded) {
   covariance.GetCovarianceMatrix(parameter_blocks, expected_covariance);
 
 #ifndef CERES_NO_SUITESPARSE
-  options.algorithm_type = SUITE_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = SUITE_SPARSE;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 #endif
 
   options.algorithm_type = DENSE_SVD;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 
-  options.algorithm_type = EIGEN_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = EIGEN_SPARSE;
   ComputeAndCompareCovarianceBlocks(options, expected_covariance);
 }
 
@@ -1043,14 +1062,17 @@ TEST_F(CovarianceTest, DenseCovarianceMatrixFromSetOfParametersInTangentSpace) {
                                                expected_covariance);
 
 #ifndef CERES_NO_SUITESPARSE
-  options.algorithm_type = SUITE_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = SUITE_SPARSE;
+
   ComputeAndCompareCovarianceBlocksInTangentSpace(options, expected_covariance);
 #endif
 
   options.algorithm_type = DENSE_SVD;
   ComputeAndCompareCovarianceBlocksInTangentSpace(options, expected_covariance);
 
-  options.algorithm_type = EIGEN_SPARSE_QR;
+  options.algorithm_type = SPARSE_QR;
+  options.sparse_linear_algebra_library_type = EIGEN_SPARSE;
   ComputeAndCompareCovarianceBlocksInTangentSpace(options, expected_covariance);
 }
 
@@ -1067,7 +1089,7 @@ TEST_F(CovarianceTest, ComputeCovarianceFailure) {
   EXPECT_DEATH_IF_SUPPORTED(covariance.Compute(parameter_blocks, &problem_),
                             "Covariance::Compute called with duplicate blocks "
                             "at indices \\(0, 1\\) and \\(2, 3\\)");
-  vector<pair<const double*, const double*> > covariance_blocks;
+  vector<pair<const double*, const double*>> covariance_blocks;
   covariance_blocks.push_back(make_pair(x, x));
   covariance_blocks.push_back(make_pair(x, x));
   covariance_blocks.push_back(make_pair(y, y));
@@ -1197,10 +1219,14 @@ class LargeScaleCovarianceTest : public ::testing::Test {
     }
   }
 
-  void ComputeAndCompare(CovarianceAlgorithmType algorithm_type,
-                         int num_threads) {
+  void ComputeAndCompare(
+      CovarianceAlgorithmType algorithm_type,
+      SparseLinearAlgebraLibraryType sparse_linear_algebra_library_type,
+      int num_threads) {
     Covariance::Options options;
     options.algorithm_type = algorithm_type;
+    options.sparse_linear_algebra_library_type =
+        sparse_linear_algebra_library_type;
     options.num_threads = num_threads;
     Covariance covariance(options);
     EXPECT_TRUE(covariance.Compute(all_covariance_blocks_, &problem_));
@@ -1232,18 +1258,18 @@ class LargeScaleCovarianceTest : public ::testing::Test {
     }
   }
 
-  scoped_array<double> parameters_;
+  std::unique_ptr<double[]> parameters_;
   int parameter_block_size_;
   int num_parameter_blocks_;
 
   Problem problem_;
-  vector<pair<const double*, const double*> > all_covariance_blocks_;
+  vector<pair<const double*, const double*>> all_covariance_blocks_;
 };
 
 #if !defined(CERES_NO_SUITESPARSE) && defined(CERES_USE_OPENMP)
 
 TEST_F(LargeScaleCovarianceTest, Parallel) {
-  ComputeAndCompare(SUITE_SPARSE_QR, 4);
+  ComputeAndCompare(SPARSE_QR, SUITE_SPARSE, 4);
 }
 
 #endif  // !defined(CERES_NO_SUITESPARSE) && defined(CERES_USE_OPENMP)

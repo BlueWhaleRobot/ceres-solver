@@ -193,14 +193,14 @@ inline void Take1stOrderPart(const int M, const JetT *src, T *dst) {
   DCHECK(src);
   DCHECK(dst);
   for (int i = 0; i < M; ++i) {
-    Eigen::Map<Eigen::Matrix<T, N, 1> >(dst + N * i, N) =
+    Eigen::Map<Eigen::Matrix<T, N, 1>>(dst + N * i, N) =
         src[i].v.template segment<N>(N0);
   }
 }
 
 // This is in a struct because default template parameters on a
 // function are not supported in C++03 (though it is available in
-// C++0x). N0 through N5 are the dimension of the input arguments to
+// C++0x). N0 through N9 are the dimension of the input arguments to
 // the user supplied functor.
 template <typename Functor, typename T,
           int N0 = 0, int N1 = 0, int N2 = 0, int N3 = 0, int N4 = 0,
@@ -258,6 +258,13 @@ struct AutoDiff {
     };
 
     JetT* output = x.get() + N0 + N1 + N2 + N3 + N4 + N5 + N6 + N7 + N8 + N9;
+
+    // Invalidate the output Jets, so that we can detect if the user
+    // did not assign values to all of them.
+    for (int i = 0; i < num_outputs; ++i) {
+      output[i].a = kImpossibleValue;
+      output[i].v.setConstant(kImpossibleValue);
+    }
 
 #define CERES_MAKE_1ST_ORDER_PERTURBATION(i)                            \
     if (N ## i) {                                                       \

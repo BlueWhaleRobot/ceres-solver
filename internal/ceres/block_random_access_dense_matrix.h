@@ -33,11 +33,10 @@
 
 #include "ceres/block_random_access_matrix.h"
 
+#include <memory>
 #include <vector>
 
-#include "ceres/internal/macros.h"
 #include "ceres/internal/port.h"
-#include "ceres/internal/scoped_ptr.h"
 
 namespace ceres {
 namespace internal {
@@ -57,6 +56,8 @@ class BlockRandomAccessDenseMatrix : public BlockRandomAccessMatrix {
   // blocks is a vector of block sizes. The resulting matrix has
   // blocks.size() * blocks.size() cells.
   explicit BlockRandomAccessDenseMatrix(const std::vector<int>& blocks);
+  BlockRandomAccessDenseMatrix(const BlockRandomAccessDenseMatrix&) = delete;
+  void operator=(const BlockRandomAccessDenseMatrix&) = delete;
 
   // The destructor is not thread safe. It assumes that no one is
   // modifying any cells when the matrix is being destroyed.
@@ -86,10 +87,8 @@ class BlockRandomAccessDenseMatrix : public BlockRandomAccessMatrix {
  private:
   int num_rows_;
   std::vector<int> block_layout_;
-  scoped_array<double> values_;
-  scoped_array<CellInfo> cell_infos_;
-
-  CERES_DISALLOW_COPY_AND_ASSIGN(BlockRandomAccessDenseMatrix);
+  std::unique_ptr<double[]> values_;
+  std::unique_ptr<CellInfo[]> cell_infos_;
 };
 
 }  // namespace internal

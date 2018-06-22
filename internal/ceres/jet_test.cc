@@ -30,14 +30,14 @@
 
 #include "ceres/jet.h"
 
+#include <Eigen/Dense>
 #include <algorithm>
 #include <cmath>
 
-#include "glog/logging.h"
-#include "gtest/gtest.h"
-#include "ceres/fpclassify.h"
 #include "ceres/stringprintf.h"
 #include "ceres/test_util.h"
+#include "glog/logging.h"
+#include "gtest/gtest.h"
 
 #define VL VLOG(1)
 
@@ -64,6 +64,46 @@ void ExpectJetsClose(const J &x, const J &y) {
   ExpectClose(x.a, y.a, kTolerance);
   ExpectClose(x.v[0], y.v[0], kTolerance);
   ExpectClose(x.v[1], y.v[1], kTolerance);
+}
+
+const double kStep = 1e-8;
+const double kNumericalTolerance = 1e-6; // Numeric derivation is quite inexact
+
+// Differentiate using Jet and confirm results with numerical derivation.
+template<typename Function>
+void NumericalTest(const char* name, const Function& f, const double x) {
+  const double exact_dx = f(MakeJet(x, 1.0, 0.0)).v[0];
+  const double estimated_dx =
+    (f(J(x + kStep)).a - f(J(x - kStep)).a) / (2.0 * kStep);
+  VL << name << "(" << x << "), exact dx: "
+     << exact_dx << ", estimated dx: " << estimated_dx;
+  ExpectClose(exact_dx, estimated_dx, kNumericalTolerance);
+}
+
+// Same as NumericalTest, but given a function taking two arguments.
+template<typename Function>
+void NumericalTest2(const char* name, const Function& f,
+                    const double x, const double y) {
+  const J exact_delta = f(MakeJet(x, 1.0, 0.0), MakeJet(y, 0.0, 1.0));
+  const double exact_dx = exact_delta.v[0];
+  const double exact_dy = exact_delta.v[1];
+
+  // Sanity check – these should be equivalent:
+  EXPECT_EQ(exact_dx, f(MakeJet(x, 1.0, 0.0), MakeJet(y, 0.0, 0.0)).v[0]);
+  EXPECT_EQ(exact_dx, f(MakeJet(x, 0.0, 1.0), MakeJet(y, 0.0, 0.0)).v[1]);
+  EXPECT_EQ(exact_dy, f(MakeJet(x, 0.0, 0.0), MakeJet(y, 1.0, 0.0)).v[0]);
+  EXPECT_EQ(exact_dy, f(MakeJet(x, 0.0, 0.0), MakeJet(y, 0.0, 1.0)).v[1]);
+
+  const double estimated_dx =
+    (f(J(x + kStep), J(y)).a - f(J(x - kStep), J(y)).a) / (2.0 * kStep);
+  const double estimated_dy =
+    (f(J(x), J(y + kStep)).a - f(J(x), J(y - kStep)).a) / (2.0 * kStep);
+  VL << name << "(" << x << ", " << y << "), exact dx: "
+     << exact_dx << ", estimated dx: " << estimated_dx;
+  ExpectClose(exact_dx, estimated_dx, kNumericalTolerance);
+  VL << name << "(" << x << ", " << y << "), exact dy: "
+     << exact_dy << ", estimated dy: " << estimated_dy;
+  ExpectClose(exact_dy, estimated_dy, kNumericalTolerance);
 }
 
 TEST(Jet, Jet) {
@@ -105,6 +145,9 @@ TEST(Jet, Jet) {
     VL << "w = " << w;
     ExpectJetsClose(w, y);
   }
+
+  NumericalTest("sqrt", sqrt<double, 2>, 0.00001);
+  NumericalTest("sqrt", sqrt<double, 2>, 1.0);
 
   { // Check that cos(2*x) = cos(x)^2 - sin(x)^2
     J z = cos(J(2.0) * x);
@@ -391,22 +434,34 @@ TEST(Jet, Jet) {
   { // Check that 1 + x == x + 1.
     J a = x + 1.0;
     J b = 1.0 + x;
+    J c = x;
+    c += 1.0;
 
     ExpectJetsClose(a, b);
+    ExpectJetsClose(a, c);
   }
 
   { // Check that 1 - x == -(x - 1).
     J a = 1.0 - x;
     J b = -(x - 1.0);
+    J c = x;
+    c -= 1.0;
 
     ExpectJetsClose(a, b);
+    ExpectJetsClose(a, -c);
   }
 
-  { // Check that x/s == x*s.
+  { // Check that (x/s)*s == (x*s)/s.
     J a = x / 5.0;
     J b = x * 5.0;
+    J c = x;
+    c /= 5.0;
+    J d = x;
+    d *= 5.0;
 
     ExpectJetsClose(5.0 * a, b / 5.0);
+    ExpectJetsClose(a, c);
+    ExpectJetsClose(b, d);
   }
 
   { // Check that x / y == 1 / (y / x).
@@ -511,6 +566,135 @@ TEST(Jet, Jet) {
     J expected = MakeJet(ceil(a.a), 0.0, 0.0);
     EXPECT_EQ(expected, b);
   }
+
+  { // Check that cbrt(x * x * x) == x.
+    J z = x * x * x;
+    J w = cbrt(z);
+    VL << "z = " << z;
+    VL << "w = " << w;
+    ExpectJetsClose(w, x);
+  }
+
+  { // Check that cbrt(y) * cbrt(y) * cbrt(y) == y.
+    J z = cbrt(y);
+    J w = z * z * z;
+    VL << "z = " << z;
+    VL << "w = " << w;
+    ExpectJetsClose(w, y);
+  }
+
+  { // Check that cbrt(x) == pow(x, 1/3).
+    J z = cbrt(x);
+    J w = pow(x, 1.0 / 3.0);
+    VL << "z = " << z;
+    VL << "w = " << w;
+    ExpectJetsClose(z, w);
+  }
+  NumericalTest("cbrt", cbrt<double, 2>, -1.0);
+  NumericalTest("cbrt", cbrt<double, 2>, -1e-5);
+  NumericalTest("cbrt", cbrt<double, 2>, 1e-5);
+  NumericalTest("cbrt", cbrt<double, 2>, 1.0);
+
+  { // Check that exp2(x) == exp(x * log(2))
+    J z = exp2(x);
+    J w = exp(x * log(2.0));
+    VL << "z = " << z;
+    VL << "w = " << w;
+    ExpectJetsClose(z, w);
+  }
+  NumericalTest("exp2", exp2<double, 2>, -1.0);
+  NumericalTest("exp2", exp2<double, 2>, -1e-5);
+  NumericalTest("exp2", exp2<double, 2>, -1e-200);
+  NumericalTest("exp2", exp2<double, 2>, 0.0);
+  NumericalTest("exp2", exp2<double, 2>, 1e-200);
+  NumericalTest("exp2", exp2<double, 2>, 1e-5);
+  NumericalTest("exp2", exp2<double, 2>, 1.0);
+
+  { // Check that log2(x) == log(x) / log(2)
+    J z = log2(x);
+    J w = log(x) / log(2.0);
+    VL << "z = " << z;
+    VL << "w = " << w;
+    ExpectJetsClose(z, w);
+  }
+  NumericalTest("log2", log2<double, 2>, 1e-5);
+  NumericalTest("log2", log2<double, 2>, 1.0);
+  NumericalTest("log2", log2<double, 2>, 100.0);
+
+  { // Check that hypot(x, y) == sqrt(x^2 + y^2)
+    J h = hypot(x, y);
+    J s = sqrt(x*x + y*y);
+    VL << "h = " << h;
+    VL << "s = " << s;
+    ExpectJetsClose(h, s);
+  }
+
+  { // Check that hypot(x, x) == sqrt(2) * abs(x)
+    J h = hypot(x, x);
+    J s = sqrt(2.0) * abs(x);
+    VL << "h = " << h;
+    VL << "s = " << s;
+    ExpectJetsClose(h, s);
+  }
+
+  { // Check that the derivative is zero tangentially to the circle:
+    J h = hypot(MakeJet(2.0, 1.0, 1.0), MakeJet(2.0, 1.0, -1.0));
+    VL << "h = " << h;
+    ExpectJetsClose(h, MakeJet(sqrt(8.0), std::sqrt(2.0), 0.0));
+  }
+
+  { // Check that hypot(x, 0) == x
+    J zero = MakeJet(0.0, 2.0, 3.14);
+    J h = hypot(x, zero);
+    VL << "h = " << h;
+    ExpectJetsClose(x, h);
+  }
+
+  { // Check that hypot(0, y) == y
+    J zero = MakeJet(0.0, 2.0, 3.14);
+    J h = hypot(zero, y);
+    VL << "h = " << h;
+    ExpectJetsClose(y, h);
+  }
+
+  { // Check that hypot(x, 0) == sqrt(x * x) == x, even when x * x underflows:
+    EXPECT_EQ(DBL_MIN * DBL_MIN, 0.0); // Make sure it underflows
+    J huge = MakeJet(DBL_MIN, 2.0, 3.14);
+    J h = hypot(huge, J(0.0));
+    VL << "h = " << h;
+    ExpectJetsClose(h, huge);
+  }
+
+  { // Check that hypot(x, 0) == sqrt(x * x) == x, even when x * x overflows:
+    EXPECT_EQ(DBL_MAX * DBL_MAX, std::numeric_limits<double>::infinity());
+    J huge = MakeJet(DBL_MAX, 2.0, 3.14);
+    J h = hypot(huge, J(0.0));
+    VL << "h = " << h;
+    ExpectJetsClose(h, huge);
+  }
+
+  NumericalTest2("hypot", hypot<double, 2>,  0.0,   1e-5);
+  NumericalTest2("hypot", hypot<double, 2>, -1e-5,  0.0);
+  NumericalTest2("hypot", hypot<double, 2>,  1e-5,  1e-5);
+  NumericalTest2("hypot", hypot<double, 2>,  0.0,   1.0);
+  NumericalTest2("hypot", hypot<double, 2>,  1e-3,  1.0);
+  NumericalTest2("hypot", hypot<double, 2>,  1e-3, -1.0);
+  NumericalTest2("hypot", hypot<double, 2>, -1e-3,  1.0);
+  NumericalTest2("hypot", hypot<double, 2>, -1e-3, -1.0);
+  NumericalTest2("hypot", hypot<double, 2>,  1.0,   2.0);
+
+  {
+    J z = fmax(x, y);
+    VL << "z = " << z;
+    ExpectJetsClose(x, z);
+  }
+
+  {
+    J z = fmin(x, y);
+    VL << "z = " << z;
+    ExpectJetsClose(y, z);
+  }
+
 }
 
 TEST(Jet, JetsInEigenMatrices) {
@@ -576,6 +760,143 @@ TEST(JetTraitsTest, ClassificationFinite) {
   EXPECT_FALSE(IsInfinite(a));
   EXPECT_FALSE(IsNaN(a));
 }
+
+#if EIGEN_VERSION_AT_LEAST(3, 3, 0)
+
+// The following test ensures that Jets have all the appropriate Eigen
+// related traits so that they can be used as part of matrix
+// decompositions.
+TEST(Jet, FullRankEigenLLTSolve) {
+  Eigen::Matrix<J, 3, 3> A;
+  Eigen::Matrix<J, 3, 1> b, x;
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
+      A(i,j) = MakeJet(0.0, i, j * j);
+    }
+    b(i) = MakeJet(i, i, i);
+    x(i) = MakeJet(0.0, 0.0, 0.0);
+    A(i,i) = MakeJet(1.0, i, i * i);
+  }
+  x = A.llt().solve(b);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(x(i).a, b(i).a);
+  }
+}
+
+TEST(Jet, FullRankEigenLDLTSolve) {
+  Eigen::Matrix<J, 3, 3> A;
+  Eigen::Matrix<J, 3, 1> b, x;
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
+      A(i,j) = MakeJet(0.0, i, j * j);
+    }
+    b(i) = MakeJet(i, i, i);
+    x(i) = MakeJet(0.0, 0.0, 0.0);
+    A(i,i) = MakeJet(1.0, i, i * i);
+  }
+  x = A.ldlt().solve(b);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(x(i).a, b(i).a);
+  }
+}
+
+TEST(Jet, FullRankEigenLUSolve) {
+  Eigen::Matrix<J, 3, 3> A;
+  Eigen::Matrix<J, 3, 1> b, x;
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
+      A(i,j) = MakeJet(0.0, i, j * j);
+    }
+    b(i) = MakeJet(i, i, i);
+    x(i) = MakeJet(0.0, 0.0, 0.0);
+    A(i,i) = MakeJet(1.0, i, i * i);
+  }
+
+  x = A.lu().solve(b);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(x(i).a, b(i).a);
+  }
+}
+
+// ScalarBinaryOpTraits is only supported on Eigen versions >= 3.3
+TEST(JetTraitsTest, MatrixScalarUnaryOps) {
+  const J x = MakeJet(2.3, -2.7, 1e-3);
+  const J y = MakeJet(1.7,  0.5, 1e+2);
+  Eigen::Matrix<J, 2, 1> a;
+  a << x, y;
+
+  const J sum = a.sum();
+  const J sum2 = a(0) + a(1);
+  ExpectJetsClose(sum, sum2);
+}
+
+TEST(JetTraitsTest, MatrixScalarBinaryOps) {
+  const J x = MakeJet(2.3, -2.7, 1e-3);
+  const J y = MakeJet(1.7,  0.5, 1e+2);
+  const J z = MakeJet(5.3, -4.7, 1e-3);
+  const J w = MakeJet(9.7,  1.5, 10.1);
+
+  Eigen::Matrix<J, 2, 2> M;
+  Eigen::Vector2d v;
+
+  M << x, y, z, w;
+  v << 0.6, -2.1;
+
+  // Check that M * v == M * v.cast<J>().
+  const Eigen::Matrix<J, 2, 1> r1 = M * v;
+  const Eigen::Matrix<J, 2, 1> r2 = M * v.cast<J>();
+
+  ExpectJetsClose(r1(0), r2(0));
+  ExpectJetsClose(r1(1), r2(1));
+
+  // Check that M * a == M * T(a).
+  const double a = 3.1;
+  const Eigen::Matrix<J, 2, 2> r3 = M * a;
+  const Eigen::Matrix<J, 2, 2> r4 = M * J(a);
+
+  ExpectJetsClose(r3(0, 0), r4(0, 0));
+  ExpectJetsClose(r3(1, 0), r4(1, 0));
+  ExpectJetsClose(r3(0, 1), r4(0, 1));
+  ExpectJetsClose(r3(1, 1), r4(1, 1));
+}
+
+TEST(JetTraitsTest, ArrayScalarUnaryOps) {
+  const J x = MakeJet(2.3, -2.7, 1e-3);
+  const J y = MakeJet(1.7,  0.5, 1e+2);
+  Eigen::Array<J, 2, 1> a;
+  a << x, y;
+
+  const J sum = a.sum();
+  const J sum2 = a(0) + a(1);
+  ExpectJetsClose(sum, sum2);
+}
+
+TEST(JetTraitsTest, ArrayScalarBinaryOps) {
+  const J x = MakeJet(2.3, -2.7, 1e-3);
+  const J y = MakeJet(1.7,  0.5, 1e+2);
+
+  Eigen::Array<J, 2, 1> a;
+  Eigen::Array2d b;
+
+  a << x, y;
+  b << 0.6, -2.1;
+
+  // Check that a * b == a * b.cast<T>()
+  const Eigen::Array<J, 2, 1> r1 = a * b;
+  const Eigen::Array<J, 2, 1> r2 = a * b.cast<J>();
+
+  ExpectJetsClose(r1(0), r2(0));
+  ExpectJetsClose(r1(1), r2(1));
+
+  // Check that a * c == a * T(c).
+  const double c = 3.1;
+  const Eigen::Array<J, 2, 1> r3 = a * c;
+  const Eigen::Array<J, 2, 1> r4 = a * J(c);
+
+  ExpectJetsClose(r3(0), r3(0));
+  ExpectJetsClose(r4(1), r4(1));
+}
+#endif   // EIGEN_VERSION_AT_LEAST(3, 3, 0)
 
 }  // namespace internal
 }  // namespace ceres

@@ -39,7 +39,6 @@
 
 #include "ceres/gradient_checker.h"
 #include "ceres/internal/eigen.h"
-#include "ceres/internal/scoped_ptr.h"
 #include "ceres/parameter_block.h"
 #include "ceres/problem.h"
 #include "ceres/problem_impl.h"
@@ -148,10 +147,9 @@ CallbackReturnType GradientCheckingIterationCallback::operator()(
 }
 void GradientCheckingIterationCallback::SetGradientErrorDetected(
     std::string& error_log) {
-  mutex_.Lock();
+  std::lock_guard<std::mutex> l(mutex_);
   gradient_error_detected_ = true;
   error_log_ += "\n" + error_log;
-  mutex_.Unlock();
 }
 
 CostFunction* CreateGradientCheckingCostFunction(
@@ -189,6 +187,7 @@ ProblemImpl* CreateGradientCheckingProblemImpl(
       DO_NOT_TAKE_OWNERSHIP;
   gradient_checking_problem_options.local_parameterization_ownership =
       DO_NOT_TAKE_OWNERSHIP;
+  gradient_checking_problem_options.context = problem_impl->context();
 
   NumericDiffOptions numeric_diff_options;
   numeric_diff_options.relative_step_size = relative_step_size;

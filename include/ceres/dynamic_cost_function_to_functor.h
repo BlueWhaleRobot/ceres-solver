@@ -32,13 +32,13 @@
 #ifndef CERES_PUBLIC_DYNAMIC_COST_FUNCTION_TO_FUNCTOR_H_
 #define CERES_PUBLIC_DYNAMIC_COST_FUNCTION_TO_FUNCTOR_H_
 
+#include <memory>
 #include <numeric>
 #include <vector>
 
 #include "ceres/dynamic_cost_function.h"
 #include "ceres/internal/fixed_array.h"
 #include "ceres/internal/port.h"
-#include "ceres/internal/scoped_ptr.h"
 
 namespace ceres {
 
@@ -116,7 +116,8 @@ class DynamicCostFunctionToFunctor {
   bool operator()(JetT const* const* inputs, JetT* output) const {
     const std::vector<int32>& parameter_block_sizes =
         cost_function_->parameter_block_sizes();
-    const int num_parameter_blocks = parameter_block_sizes.size();
+    const int num_parameter_blocks =
+        static_cast<int>(parameter_block_sizes.size());
     const int num_residuals = cost_function_->num_residuals();
     const int num_parameters = std::accumulate(parameter_block_sizes.begin(),
                                                parameter_block_sizes.end(), 0);
@@ -181,7 +182,7 @@ class DynamicCostFunctionToFunctor {
   }
 
  private:
-  internal::scoped_ptr<CostFunction> cost_function_;
+  std::unique_ptr<CostFunction> cost_function_;
 };
 
 }  // namespace ceres

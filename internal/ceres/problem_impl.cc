@@ -34,20 +34,27 @@
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <memory>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
+
 #include "ceres/casts.h"
+#include "ceres/compressed_row_jacobian_writer.h"
 #include "ceres/compressed_row_sparse_matrix.h"
+#include "ceres/context_impl.h"
 #include "ceres/cost_function.h"
 #include "ceres/crs_matrix.h"
 #include "ceres/evaluator.h"
+#include "ceres/internal/port.h"
 #include "ceres/loss_function.h"
 #include "ceres/map_util.h"
 #include "ceres/parameter_block.h"
 #include "ceres/program.h"
+#include "ceres/program_evaluator.h"
 #include "ceres/residual_block.h"
+#include "ceres/scratch_evaluate_preparer.h"
 #include "ceres/stl_util.h"
 #include "ceres/stringprintf.h"
 #include "glog/logging.h"
@@ -58,7 +65,6 @@ namespace internal {
 using std::map;
 using std::string;
 using std::vector;
-typedef std::map<double*, internal::ParameterBlock*> ParameterMap;
 
 namespace {
 // Returns true if two regions of memory, a and b, with sizes size_a and size_b
@@ -80,6 +86,39 @@ void CheckForNoAliasing(double* existing_block,
       << " and has size " << existing_block_size << " with new parameter "
       << "block that has memory address " << new_block << " and would have "
       << "size " << new_block_size << ".";
+}
+
+template <typename KeyType>
+void DecrementValueOrDeleteKey(const KeyType key,
+                               std::map<KeyType, int>* container) {
+  auto it = container->find(key);
+  if (it->second == 1) {
+    delete key;
+    container->erase(it);
+  } else {
+    --it->second;
+  }
+}
+
+template <typename ForwardIterator>
+void STLDeleteContainerPairFirstPointers(ForwardIterator begin,
+                                         ForwardIterator end) {
+  while (begin != end) {
+    delete begin->first;
+    ++begin;
+  }
+}
+
+void InitializeContext(Context* context,
+                       ContextImpl** context_impl,
+                       bool* context_impl_owned) {
+  if (context == NULL) {
+    *context_impl_owned = true;
+    *context_impl = new ContextImpl;
+  } else {
+    *context_impl_owned = false;
+    *context_impl = down_cast<ContextImpl*>(context);
+  }
 }
 
 }  // namespace
@@ -173,16 +212,19 @@ void ProblemImpl::DeleteBlock(ResidualBlock* residual_block) {
   // The const casts here are legit, since ResidualBlock holds these
   // pointers as const pointers but we have ownership of them and
   // have the right to destroy them when the destructor is called.
-  if (options_.cost_function_ownership == TAKE_OWNERSHIP &&
-      residual_block->cost_function() != NULL) {
-    cost_functions_to_delete_.push_back(
-        const_cast<CostFunction*>(residual_block->cost_function()));
+  CostFunction* cost_function =
+      const_cast<CostFunction*>(residual_block->cost_function());
+  if (options_.cost_function_ownership == TAKE_OWNERSHIP) {
+    DecrementValueOrDeleteKey(cost_function, &cost_function_ref_count_);
   }
+
+  LossFunction* loss_function =
+      const_cast<LossFunction*>(residual_block->loss_function());
   if (options_.loss_function_ownership == TAKE_OWNERSHIP &&
-      residual_block->loss_function() != NULL) {
-    loss_functions_to_delete_.push_back(
-        const_cast<LossFunction*>(residual_block->loss_function()));
+      loss_function != NULL) {
+    DecrementValueOrDeleteKey(loss_function, &loss_function_ref_count_);
   }
+
   delete residual_block;
 }
 
@@ -201,18 +243,32 @@ void ProblemImpl::DeleteBlock(ParameterBlock* parameter_block) {
   delete parameter_block;
 }
 
-ProblemImpl::ProblemImpl() : program_(new internal::Program) {}
+ProblemImpl::ProblemImpl()
+    : options_(Problem::Options()),
+      program_(new internal::Program) {
+  residual_parameters_.reserve(10);
+  InitializeContext(options_.context, &context_impl_, &context_impl_owned_);
+}
+
 ProblemImpl::ProblemImpl(const Problem::Options& options)
     : options_(options),
-      program_(new internal::Program) {}
+      program_(new internal::Program) {
+  residual_parameters_.reserve(10);
+  InitializeContext(options_.context, &context_impl_, &context_impl_owned_);
+}
 
 ProblemImpl::~ProblemImpl() {
-  // Collect the unique cost/loss functions and delete the residuals.
-  const int num_residual_blocks = program_->residual_blocks_.size();
-  cost_functions_to_delete_.reserve(num_residual_blocks);
-  loss_functions_to_delete_.reserve(num_residual_blocks);
-  for (int i = 0; i < program_->residual_blocks_.size(); ++i) {
-    DeleteBlock(program_->residual_blocks_[i]);
+  STLDeleteContainerPointers(program_->residual_blocks_.begin(),
+                             program_->residual_blocks_.end());
+
+  if (options_.cost_function_ownership == TAKE_OWNERSHIP) {
+    STLDeleteContainerPairFirstPointers(cost_function_ref_count_.begin(),
+                                        cost_function_ref_count_.end());
+  }
+
+  if (options_.loss_function_ownership == TAKE_OWNERSHIP) {
+    STLDeleteContainerPairFirstPointers(loss_function_ref_count_.begin(),
+                                        loss_function_ref_count_.end());
   }
 
   // Collect the unique parameterizations and delete the parameters.
@@ -220,13 +276,13 @@ ProblemImpl::~ProblemImpl() {
     DeleteBlock(program_->parameter_blocks_[i]);
   }
 
-  // Delete the owned cost/loss functions and parameterizations.
+  // Delete the owned parameterizations.
   STLDeleteUniqueContainerPointers(local_parameterizations_to_delete_.begin(),
                                    local_parameterizations_to_delete_.end());
-  STLDeleteUniqueContainerPointers(cost_functions_to_delete_.begin(),
-                                   cost_functions_to_delete_.end());
-  STLDeleteUniqueContainerPointers(loss_functions_to_delete_.begin(),
-                                   loss_functions_to_delete_.end());
+
+  if (context_impl_owned_) {
+    delete context_impl_;
+  }
 }
 
 ResidualBlock* ProblemImpl::AddResidualBlock(
@@ -305,6 +361,18 @@ ResidualBlock* ProblemImpl::AddResidualBlock(
     residual_block_set_.insert(new_residual_block);
   }
 
+  if (options_.cost_function_ownership == TAKE_OWNERSHIP) {
+    // Increment the reference count, creating an entry in the table if
+    // needed. Note: C++ maps guarantee that new entries have default
+    // constructed values; this implies integers are zero initialized.
+    ++cost_function_ref_count_[cost_function];
+  }
+
+  if (options_.loss_function_ownership == TAKE_OWNERSHIP &&
+      loss_function != NULL) {
+    ++loss_function_ref_count_[loss_function];
+  }
+
   return new_residual_block;
 }
 
@@ -314,69 +382,69 @@ ResidualBlock* ProblemImpl::AddResidualBlock(
     CostFunction* cost_function,
     LossFunction* loss_function,
     double* x0) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
+  residual_parameters_.clear();
+  residual_parameters_.push_back(x0);
+  return AddResidualBlock(cost_function, loss_function, residual_parameters_);
 }
 
 ResidualBlock* ProblemImpl::AddResidualBlock(
     CostFunction* cost_function,
     LossFunction* loss_function,
     double* x0, double* x1) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
+  residual_parameters_.clear();
+  residual_parameters_.push_back(x0);
+  residual_parameters_.push_back(x1);
+  return AddResidualBlock(cost_function, loss_function, residual_parameters_);
 }
 
 ResidualBlock* ProblemImpl::AddResidualBlock(
     CostFunction* cost_function,
     LossFunction* loss_function,
     double* x0, double* x1, double* x2) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
+  residual_parameters_.clear();
+  residual_parameters_.push_back(x0);
+  residual_parameters_.push_back(x1);
+  residual_parameters_.push_back(x2);
+  return AddResidualBlock(cost_function, loss_function, residual_parameters_);
 }
 
 ResidualBlock* ProblemImpl::AddResidualBlock(
     CostFunction* cost_function,
     LossFunction* loss_function,
     double* x0, double* x1, double* x2, double* x3) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
+  residual_parameters_.clear();
+  residual_parameters_.push_back(x0);
+  residual_parameters_.push_back(x1);
+  residual_parameters_.push_back(x2);
+  residual_parameters_.push_back(x3);
+  return AddResidualBlock(cost_function, loss_function, residual_parameters_);
 }
 
 ResidualBlock* ProblemImpl::AddResidualBlock(
     CostFunction* cost_function,
     LossFunction* loss_function,
     double* x0, double* x1, double* x2, double* x3, double* x4) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  residual_parameters.push_back(x4);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
+  residual_parameters_.clear();
+  residual_parameters_.push_back(x0);
+  residual_parameters_.push_back(x1);
+  residual_parameters_.push_back(x2);
+  residual_parameters_.push_back(x3);
+  residual_parameters_.push_back(x4);
+  return AddResidualBlock(cost_function, loss_function, residual_parameters_);
 }
 
 ResidualBlock* ProblemImpl::AddResidualBlock(
     CostFunction* cost_function,
     LossFunction* loss_function,
     double* x0, double* x1, double* x2, double* x3, double* x4, double* x5) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  residual_parameters.push_back(x4);
-  residual_parameters.push_back(x5);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
+  residual_parameters_.clear();
+  residual_parameters_.push_back(x0);
+  residual_parameters_.push_back(x1);
+  residual_parameters_.push_back(x2);
+  residual_parameters_.push_back(x3);
+  residual_parameters_.push_back(x4);
+  residual_parameters_.push_back(x5);
+  return AddResidualBlock(cost_function, loss_function, residual_parameters_);
 }
 
 ResidualBlock* ProblemImpl::AddResidualBlock(
@@ -384,15 +452,15 @@ ResidualBlock* ProblemImpl::AddResidualBlock(
     LossFunction* loss_function,
     double* x0, double* x1, double* x2, double* x3, double* x4, double* x5,
     double* x6) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  residual_parameters.push_back(x4);
-  residual_parameters.push_back(x5);
-  residual_parameters.push_back(x6);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
+  residual_parameters_.clear();
+  residual_parameters_.push_back(x0);
+  residual_parameters_.push_back(x1);
+  residual_parameters_.push_back(x2);
+  residual_parameters_.push_back(x3);
+  residual_parameters_.push_back(x4);
+  residual_parameters_.push_back(x5);
+  residual_parameters_.push_back(x6);
+  return AddResidualBlock(cost_function, loss_function, residual_parameters_);
 }
 
 ResidualBlock* ProblemImpl::AddResidualBlock(
@@ -400,16 +468,16 @@ ResidualBlock* ProblemImpl::AddResidualBlock(
     LossFunction* loss_function,
     double* x0, double* x1, double* x2, double* x3, double* x4, double* x5,
     double* x6, double* x7) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  residual_parameters.push_back(x4);
-  residual_parameters.push_back(x5);
-  residual_parameters.push_back(x6);
-  residual_parameters.push_back(x7);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
+  residual_parameters_.clear();
+  residual_parameters_.push_back(x0);
+  residual_parameters_.push_back(x1);
+  residual_parameters_.push_back(x2);
+  residual_parameters_.push_back(x3);
+  residual_parameters_.push_back(x4);
+  residual_parameters_.push_back(x5);
+  residual_parameters_.push_back(x6);
+  residual_parameters_.push_back(x7);
+  return AddResidualBlock(cost_function, loss_function, residual_parameters_);
 }
 
 ResidualBlock* ProblemImpl::AddResidualBlock(
@@ -417,17 +485,17 @@ ResidualBlock* ProblemImpl::AddResidualBlock(
     LossFunction* loss_function,
     double* x0, double* x1, double* x2, double* x3, double* x4, double* x5,
     double* x6, double* x7, double* x8) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  residual_parameters.push_back(x4);
-  residual_parameters.push_back(x5);
-  residual_parameters.push_back(x6);
-  residual_parameters.push_back(x7);
-  residual_parameters.push_back(x8);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
+  residual_parameters_.clear();
+  residual_parameters_.push_back(x0);
+  residual_parameters_.push_back(x1);
+  residual_parameters_.push_back(x2);
+  residual_parameters_.push_back(x3);
+  residual_parameters_.push_back(x4);
+  residual_parameters_.push_back(x5);
+  residual_parameters_.push_back(x6);
+  residual_parameters_.push_back(x7);
+  residual_parameters_.push_back(x8);
+  return AddResidualBlock(cost_function, loss_function, residual_parameters_);
 }
 
 ResidualBlock* ProblemImpl::AddResidualBlock(
@@ -435,18 +503,18 @@ ResidualBlock* ProblemImpl::AddResidualBlock(
     LossFunction* loss_function,
     double* x0, double* x1, double* x2, double* x3, double* x4, double* x5,
     double* x6, double* x7, double* x8, double* x9) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  residual_parameters.push_back(x4);
-  residual_parameters.push_back(x5);
-  residual_parameters.push_back(x6);
-  residual_parameters.push_back(x7);
-  residual_parameters.push_back(x8);
-  residual_parameters.push_back(x9);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
+  residual_parameters_.clear();
+  residual_parameters_.push_back(x0);
+  residual_parameters_.push_back(x1);
+  residual_parameters_.push_back(x2);
+  residual_parameters_.push_back(x3);
+  residual_parameters_.push_back(x4);
+  residual_parameters_.push_back(x5);
+  residual_parameters_.push_back(x6);
+  residual_parameters_.push_back(x7);
+  residual_parameters_.push_back(x8);
+  residual_parameters_.push_back(x9);
+  return AddResidualBlock(cost_function, loss_function, residual_parameters_);
 }
 
 void ProblemImpl::AddParameterBlock(double* values, int size) {
@@ -742,34 +810,24 @@ bool ProblemImpl::Evaluate(const Problem::EvaluateOptions& evaluate_options,
   // the Evaluator decides the storage for the Jacobian based on the
   // type of linear solver being used.
   evaluator_options.linear_solver_type = SPARSE_NORMAL_CHOLESKY;
-#ifndef CERES_USE_OPENMP
+#ifdef CERES_NO_THREADS
   LOG_IF(WARNING, evaluate_options.num_threads > 1)
-      << "OpenMP support is not compiled into this binary; "
+      << "Neither OpenMP nor TBB support is compiled into this binary; "
       << "only evaluate_options.num_threads = 1 is supported. Switching "
       << "to single threaded mode.";
   evaluator_options.num_threads = 1;
 #else
   evaluator_options.num_threads = evaluate_options.num_threads;
-#endif  // CERES_USE_OPENMP
+#endif  // CERES_NO_THREADS
 
-  string error;
-  scoped_ptr<Evaluator> evaluator(
-      Evaluator::Create(evaluator_options, &program, &error));
-  if (evaluator.get() == NULL) {
-    LOG(ERROR) << "Unable to create an Evaluator object. "
-               << "Error: " << error
-               << "This is a Ceres bug; please contact the developers!";
+  // The main thread also does work so we only need to launch num_threads - 1.
+  context_impl_->EnsureMinimumThreads(evaluator_options.num_threads - 1);
+  evaluator_options.context = context_impl_;
 
-    // Make the parameter blocks that were temporarily marked
-    // constant, variable again.
-    for (int i = 0; i < variable_parameter_blocks.size(); ++i) {
-      variable_parameter_blocks[i]->SetVarying();
-    }
-
-    program_->SetParameterBlockStatePtrsToUserStatePtrs();
-    program_->SetParameterOffsetsAndIndex();
-    return false;
-  }
+  std::unique_ptr<Evaluator> evaluator(
+      new ProgramEvaluator<ScratchEvaluatePreparer,
+                           CompressedRowJacobianWriter>(evaluator_options,
+                                                        &program));
 
   if (residuals !=NULL) {
     residuals->resize(evaluator->NumResiduals());
@@ -779,7 +837,7 @@ bool ProblemImpl::Evaluate(const Problem::EvaluateOptions& evaluate_options,
     gradient->resize(evaluator->NumEffectiveParameters());
   }
 
-  scoped_ptr<CompressedRowSparseMatrix> tmp_jacobian;
+  std::unique_ptr<CompressedRowSparseMatrix> tmp_jacobian;
   if (jacobian != NULL) {
     tmp_jacobian.reset(
         down_cast<CompressedRowSparseMatrix*>(evaluator->CreateJacobian()));
@@ -879,10 +937,9 @@ bool ProblemImpl::HasParameterBlock(const double* parameter_block) const {
 void ProblemImpl::GetParameterBlocks(vector<double*>* parameter_blocks) const {
   CHECK_NOTNULL(parameter_blocks);
   parameter_blocks->resize(0);
-  for (ParameterMap::const_iterator it = parameter_block_map_.begin();
-       it != parameter_block_map_.end();
-       ++it) {
-    parameter_blocks->push_back(it->first);
+  parameter_blocks->reserve(parameter_block_map_.size());
+  for (const auto& entry : parameter_block_map_) {
+    parameter_blocks->push_back(entry.first);
   }
 }
 

@@ -34,11 +34,10 @@
 #ifndef CERES_INTERNAL_BLOCK_SPARSE_MATRIX_H_
 #define CERES_INTERNAL_BLOCK_SPARSE_MATRIX_H_
 
+#include <memory>
 #include "ceres/block_structure.h"
 #include "ceres/sparse_matrix.h"
 #include "ceres/internal/eigen.h"
-#include "ceres/internal/macros.h"
-#include "ceres/internal/scoped_ptr.h"
 
 namespace ceres {
 namespace internal {
@@ -64,6 +63,9 @@ class BlockSparseMatrix : public SparseMatrix {
   explicit BlockSparseMatrix(CompressedRowBlockStructure* block_structure);
 
   BlockSparseMatrix();
+  BlockSparseMatrix(const BlockSparseMatrix&) = delete;
+  void operator=(const BlockSparseMatrix&) = delete;
+
   virtual ~BlockSparseMatrix();
 
   // Implementation of SparseMatrix interface.
@@ -84,14 +86,51 @@ class BlockSparseMatrix : public SparseMatrix {
   void ToTripletSparseMatrix(TripletSparseMatrix* matrix) const;
   const CompressedRowBlockStructure* block_structure() const;
 
+  // Append the contents of m to the bottom of this matrix. m must
+  // have the same column blocks structure as this matrix.
+  void AppendRows(const BlockSparseMatrix& m);
+
+  // Delete the bottom delta_rows_blocks.
+  void DeleteRowBlocks(int delta_row_blocks);
+
+  static BlockSparseMatrix* CreateDiagonalMatrix(
+      const double* diagonal,
+      const std::vector<Block>& column_blocks);
+
+  struct RandomMatrixOptions {
+    int num_row_blocks = 0;
+    int min_row_block_size = 0;
+    int max_row_block_size = 0;
+    int num_col_blocks = 0;
+    int min_col_block_size = 0;
+    int max_col_block_size = 0;
+
+    // 0 < block_density <= 1 is the probability of a block being
+    // present in the matrix. A given random matrix will not have
+    // precisely this density.
+    double block_density = 0.0;
+
+    // If col_blocks is non-empty, then the generated random matrix
+    // has this block structure and the column related options in this
+    // struct are ignored.
+    std::vector<Block> col_blocks;
+  };
+
+  // Create a random BlockSparseMatrix whose entries are normally
+  // distributed and whose structure is determined by
+  // RandomMatrixOptions.
+  //
+  // Caller owns the result.
+  static BlockSparseMatrix* CreateRandomMatrix(
+      const RandomMatrixOptions& options);
+
  private:
   int num_rows_;
   int num_cols_;
-  int max_num_nonzeros_;
   int num_nonzeros_;
-  scoped_array<double> values_;
-  scoped_ptr<CompressedRowBlockStructure> block_structure_;
-  CERES_DISALLOW_COPY_AND_ASSIGN(BlockSparseMatrix);
+  int max_num_nonzeros_;
+  std::unique_ptr<double[]> values_;
+  std::unique_ptr<CompressedRowBlockStructure> block_structure_;
 };
 
 }  // namespace internal

@@ -31,9 +31,10 @@
 #ifndef CERES_INTERNAL_TRIPLET_SPARSE_MATRIX_H_
 #define CERES_INTERNAL_TRIPLET_SPARSE_MATRIX_H_
 
+#include <memory>
+#include <vector>
 #include "ceres/sparse_matrix.h"
 #include "ceres/internal/eigen.h"
-#include "ceres/internal/scoped_ptr.h"
 #include "ceres/types.h"
 
 namespace ceres {
@@ -47,6 +48,12 @@ class TripletSparseMatrix : public SparseMatrix {
  public:
   TripletSparseMatrix();
   TripletSparseMatrix(int num_rows, int num_cols, int max_num_nonzeros);
+  TripletSparseMatrix(int num_rows,
+                      int num_cols,
+                      const std::vector<int>& rows,
+                      const std::vector<int>& cols,
+                      const std::vector<double>& values);
+
   explicit TripletSparseMatrix(const TripletSparseMatrix& orig);
 
   TripletSparseMatrix& operator=(const TripletSparseMatrix& rhs);
@@ -105,6 +112,25 @@ class TripletSparseMatrix : public SparseMatrix {
   static TripletSparseMatrix* CreateSparseDiagonalMatrix(const double* values,
                                                          int num_rows);
 
+  // Options struct to control the generation of random
+  // TripletSparseMatrix objects.
+  struct RandomMatrixOptions {
+    int num_rows;
+    int num_cols;
+    // 0 < density <= 1 is the probability of an entry being
+    // structurally non-zero. A given random matrix will not have
+    // precisely this density.
+    double density;
+  };
+
+  // Create a random CompressedRowSparseMatrix whose entries are
+  // normally distributed and whose structure is determined by
+  // RandomMatrixOptions.
+  //
+  // Caller owns the result.
+  static TripletSparseMatrix* CreateRandomMatrix(
+      const TripletSparseMatrix::RandomMatrixOptions& options);
+
  private:
   void AllocateMemory();
   void CopyData(const TripletSparseMatrix& orig);
@@ -118,9 +144,9 @@ class TripletSparseMatrix : public SparseMatrix {
   // stored at the location (rows_[i], cols_[i]). If the there are
   // multiple entries with the same (rows_[i], cols_[i]), the values_
   // entries corresponding to them are summed up.
-  scoped_array<int> rows_;
-  scoped_array<int> cols_;
-  scoped_array<double> values_;
+  std::unique_ptr<int[]> rows_;
+  std::unique_ptr<int[]> cols_;
+  std::unique_ptr<double[]> values_;
 };
 
 }  // namespace internal

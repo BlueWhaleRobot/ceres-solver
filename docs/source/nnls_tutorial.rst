@@ -54,7 +54,7 @@ the more familiar `non-linear least squares problem
 <http://en.wikipedia.org/wiki/Non-linear_least_squares>`_.
 
 .. math:: \frac{1}{2}\sum_{i} \left\|f_i\left(x_{i_1}, ... ,x_{i_k}\right)\right\|^2.
-   :label: ceresproblem2
+   :label: ceresproblemnonrobust
 
 .. _section-hello-world:
 
@@ -210,8 +210,8 @@ Which is added to the :class:`Problem` as:
 .. code-block:: c++
 
   CostFunction* cost_function =
-    new NumericDiffCostFunction<NumericDiffCostFunctor, ceres::CENTRAL, 1, 1, 1>(
-        new NumericDiffCostFunctor)
+    new NumericDiffCostFunction<NumericDiffCostFunctor, ceres::CENTRAL, 1, 1>(
+        new NumericDiffCostFunctor);
   problem.AddResidualBlock(cost_function, NULL, &x);
 
 Notice the parallel from when we were using automatic differentiation
@@ -710,7 +710,7 @@ objective function per observation.
 Since this is a large sparse problem (well large for ``DENSE_QR``
 anyways), one way to solve this problem is to set
 :member:`Solver::Options::linear_solver_type` to
-``SPARSE_NORMAL_CHOLESKY`` and call :member:`Solve`. And while this is
+``SPARSE_NORMAL_CHOLESKY`` and call :func:`Solve`. And while this is
 a reasonable thing to do, bundle adjustment problems have a special
 sparsity structure that can be exploited to solve them much more
 efficiently. Ceres provides three specialized solvers (collectively

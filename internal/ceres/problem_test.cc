@@ -32,12 +32,12 @@
 #include "ceres/problem.h"
 #include "ceres/problem_impl.h"
 
+#include <memory>
 #include "ceres/casts.h"
 #include "ceres/cost_function.h"
 #include "ceres/crs_matrix.h"
 #include "ceres/evaluator_test_utils.h"
 #include "ceres/internal/eigen.h"
-#include "ceres/internal/scoped_ptr.h"
 #include "ceres/local_parameterization.h"
 #include "ceres/loss_function.h"
 #include "ceres/map_util.h"
@@ -385,11 +385,10 @@ TEST(Problem, CostFunctionsAreDeletedEvenWithRemovals) {
     ResidualBlock* r_wz = problem.AddResidualBlock(cost_wz, NULL, w, z);
     EXPECT_EQ(2, problem.NumResidualBlocks());
 
-    // In the current implementation, the destructor shouldn't get run yet.
     problem.RemoveResidualBlock(r_yz);
-    CHECK_EQ(num_destructions, 0);
+    CHECK_EQ(num_destructions, 1);
     problem.RemoveResidualBlock(r_wz);
-    CHECK_EQ(num_destructions, 0);
+    CHECK_EQ(num_destructions, 2);
 
     EXPECT_EQ(0, problem.NumResidualBlocks());
   }
@@ -497,7 +496,7 @@ struct DynamicProblem : public ::testing::TestWithParam<bool> {
     ExpectParameterBlockContainsResidualBlock(values, r4);
   }
 
-  scoped_ptr<ProblemImpl> problem;
+  std::unique_ptr<ProblemImpl> problem;
   double y[4], z[5], w[3];
 };
 

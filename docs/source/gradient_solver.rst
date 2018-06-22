@@ -392,11 +392,26 @@ Solving
 
    Callbacks that are executed at the end of each iteration of the
    :class:`Minimizer`. They are executed in the order that they are
-   specified in this vector. See the documentation for
-   :class:`IterationCallback` for more details.
+   specified in this vector. By default, parameter blocks are updated
+   only at the end of the optimization, i.e., when the
+   :class:`Minimizer` terminates. This behavior is controlled by
+   :member:`GradientProblemSolver::Options::update_state_every_variable`. If
+   the user wishes to have access to the update parameter blocks when
+   his/her callbacks are executed, then set
+   :member:`GradientProblemSolver::Options::update_state_every_iteration`
+   to true.
 
    The solver does NOT take ownership of these pointers.
 
+
+.. member:: bool Solver::Options::update_state_every_iteration
+
+   Default: ``false``
+
+   Normally the parameter vector is only updated when the solver
+   terminates. Setting this to true updates it every iteration. This
+   setting is useful when building an interactive application using
+   Ceres and using an :class:`IterationCallback`.
 
 :class:`GradientProblemSolver::Summary`
 ---------------------------------------
@@ -446,6 +461,14 @@ Solving
 .. member:: vector<IterationSummary> GradientProblemSolver::Summary::iterations
 
    :class:`IterationSummary` for each minimizer iteration in order.
+
+.. member:: int num_cost_evaluations
+
+   Number of times the cost (and not the gradient) was evaluated.
+
+.. member:: int num_gradient_evaluations
+
+   Number of times the gradient (and the cost) were evaluated.
 
 .. member:: double GradientProblemSolver::Summary::total_time_in_seconds
 

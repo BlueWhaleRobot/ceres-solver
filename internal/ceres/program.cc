@@ -30,8 +30,11 @@
 
 #include "ceres/program.h"
 
+#include <algorithm>
 #include <map>
+#include <memory>
 #include <vector>
+
 #include "ceres/array_utils.h"
 #include "ceres/casts.h"
 #include "ceres/compressed_row_sparse_matrix.h"
@@ -274,7 +277,7 @@ Program* Program::CreateReducedProgram(
   CHECK_NOTNULL(fixed_cost);
   CHECK_NOTNULL(error);
 
-  scoped_ptr<Program> reduced_program(new Program(*this));
+  std::unique_ptr<Program> reduced_program(new Program(*this));
   if (!reduced_program->RemoveFixedBlocks(removed_parameter_blocks,
                                           fixed_cost,
                                           error)) {
@@ -292,7 +295,7 @@ bool Program::RemoveFixedBlocks(vector<double*>* removed_parameter_blocks,
   CHECK_NOTNULL(fixed_cost);
   CHECK_NOTNULL(error);
 
-  scoped_array<double> residual_block_evaluate_scratch;
+  std::unique_ptr<double[]> residual_block_evaluate_scratch;
   residual_block_evaluate_scratch.reset(
       new double[MaxScratchDoublesNeededForEvaluate()]);
   *fixed_cost = 0.0;
@@ -373,11 +376,10 @@ bool Program::IsParameterBlockSetIndependent(
   // blocks in the same residual block are part of
   // parameter_block_ptrs as that would violate the assumption that it
   // is an independent set in the Hessian matrix.
-  for (vector<ResidualBlock*>::const_iterator it = residual_blocks_.begin();
-       it != residual_blocks_.end();
-       ++it) {
-    ParameterBlock* const* parameter_blocks = (*it)->parameter_blocks();
-    const int num_parameter_blocks = (*it)->NumParameterBlocks();
+  for (const ResidualBlock* residual_block : residual_blocks_) {
+    ParameterBlock* const* parameter_blocks =
+        residual_block->parameter_blocks();
+    const int num_parameter_blocks = residual_block->NumParameterBlocks();
     int count = 0;
     for (int i = 0; i < num_parameter_blocks; ++i) {
       count += independent_set.count(

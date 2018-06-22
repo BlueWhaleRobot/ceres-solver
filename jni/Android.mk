@@ -79,6 +79,11 @@ ifneq ($(shell $(LOCAL_PATH)/assert_ndk_version.sh "r9d" $(NDK_ROOT)), true)
   $(error Ceres requires NDK version r9d or greater)
 endif
 
+# Ceres requires Eigen to build.
+ifndef EIGEN_PATH
+  $(error Ceres requires Eigen; please invoke via EIGEN_PATH=... ndk-build)
+endif
+
 EIGEN_PATH := $(EIGEN_PATH)
 CERES_INCLUDE_PATHS := $(CERES_EXTRA_INCLUDES)
 CERES_INCLUDE_PATHS += $(LOCAL_PATH)/../internal
@@ -103,17 +108,8 @@ LOCAL_CFLAGS := $(CERES_EXTRA_DEFINES) \
                 -DCERES_NO_LAPACK \
                 -DCERES_NO_SUITESPARSE \
                 -DCERES_NO_CXSPARSE \
-                -DCERES_STD_UNORDERED_MAP
-
-
-# If the user did not enable threads in CERES_EXTRA_DEFINES, then add
-# CERES_NO_THREADS.
-#
-# TODO(sameeragarwal): Update comments here and in the docs to
-# demonstrate how OpenMP can be used by the user.
-ifeq (,$(findstring CERES_HAVE_PTHREAD, $(LOCAL_CFLAGS)))
-  LOCAL_CFLAGS += -DCERES_NO_THREADS
-endif
+                -DCERES_USE_EIGEN_SPARSE \
+                -DCERES_USE_OPENMP
 
 LOCAL_SRC_FILES := $(CERES_SRC_PATH)/array_utils.cc \
                    $(CERES_SRC_PATH)/blas.cc \
@@ -133,6 +129,8 @@ LOCAL_SRC_FILES := $(CERES_SRC_PATH)/array_utils.cc \
                    $(CERES_SRC_PATH)/compressed_row_sparse_matrix.cc \
                    $(CERES_SRC_PATH)/conditioned_cost_function.cc \
                    $(CERES_SRC_PATH)/conjugate_gradients_solver.cc \
+                   $(CERES_SRC_PATH)/context.cc \
+                   $(CERES_SRC_PATH)/context_impl.cc \
                    $(CERES_SRC_PATH)/coordinate_descent_minimizer.cc \
                    $(CERES_SRC_PATH)/corrector.cc \
                    $(CERES_SRC_PATH)/covariance.cc \
@@ -144,14 +142,19 @@ LOCAL_SRC_FILES := $(CERES_SRC_PATH)/array_utils.cc \
                    $(CERES_SRC_PATH)/dogleg_strategy.cc \
                    $(CERES_SRC_PATH)/dynamic_compressed_row_jacobian_writer.cc \
                    $(CERES_SRC_PATH)/dynamic_compressed_row_sparse_matrix.cc \
+                   $(CERES_SRC_PATH)/dynamic_sparse_normal_cholesky_solver.cc \
+                   $(CERES_SRC_PATH)/eigensparse.cc \
                    $(CERES_SRC_PATH)/evaluator.cc \
                    $(CERES_SRC_PATH)/file.cc \
+                   $(CERES_SRC_PATH)/function_sample.cc \
                    $(CERES_SRC_PATH)/gradient_checker.cc \
                    $(CERES_SRC_PATH)/gradient_checking_cost_function.cc \
                    $(CERES_SRC_PATH)/gradient_problem.cc \
                    $(CERES_SRC_PATH)/gradient_problem_solver.cc \
                    $(CERES_SRC_PATH)/is_close.cc \
                    $(CERES_SRC_PATH)/implicit_schur_complement.cc \
+                   $(CERES_SRC_PATH)/inner_product_computer.cc \
+                   $(CERES_SRC_PATH)/iterative_refiner.cc \
                    $(CERES_SRC_PATH)/iterative_schur_complement_solver.cc \
                    $(CERES_SRC_PATH)/lapack.cc \
                    $(CERES_SRC_PATH)/levenberg_marquardt_strategy.cc \
@@ -167,6 +170,8 @@ LOCAL_SRC_FILES := $(CERES_SRC_PATH)/array_utils.cc \
                    $(CERES_SRC_PATH)/low_rank_inverse_hessian.cc \
                    $(CERES_SRC_PATH)/minimizer.cc \
                    $(CERES_SRC_PATH)/normal_prior.cc \
+                   $(CERES_SRC_PATH)/parallel_utils.cc \
+                   $(CERES_SRC_PATH)/parallel_for_openmp.cc \
                    $(CERES_SRC_PATH)/parameter_block_ordering.cc \
                    $(CERES_SRC_PATH)/partitioned_matrix_view.cc \
                    $(CERES_SRC_PATH)/polynomial.cc \
@@ -181,14 +186,19 @@ LOCAL_SRC_FILES := $(CERES_SRC_PATH)/array_utils.cc \
                    $(CERES_SRC_PATH)/schur_complement_solver.cc \
                    $(CERES_SRC_PATH)/schur_eliminator.cc \
                    $(CERES_SRC_PATH)/schur_jacobi_preconditioner.cc \
+                   $(CERES_SRC_PATH)/schur_templates.cc \
                    $(CERES_SRC_PATH)/scratch_evaluate_preparer.cc \
+                   $(CERES_SRC_PATH)/single_linkage_clustering.cc \
                    $(CERES_SRC_PATH)/solver.cc \
                    $(CERES_SRC_PATH)/solver_utils.cc \
+                   $(CERES_SRC_PATH)/sparse_cholesky.cc \
                    $(CERES_SRC_PATH)/sparse_matrix.cc \
                    $(CERES_SRC_PATH)/sparse_normal_cholesky_solver.cc \
                    $(CERES_SRC_PATH)/split.cc \
                    $(CERES_SRC_PATH)/stringprintf.cc \
+                   $(CERES_SRC_PATH)/subset_preconditioner.cc \
                    $(CERES_SRC_PATH)/suitesparse.cc \
+                   $(CERES_SRC_PATH)/thread_token_provider.cc \
                    $(CERES_SRC_PATH)/triplet_sparse_matrix.cc \
                    $(CERES_SRC_PATH)/trust_region_minimizer.cc \
                    $(CERES_SRC_PATH)/trust_region_preprocessor.cc \
@@ -210,6 +220,7 @@ LOCAL_SRC_FILES := $(CERES_SRC_PATH)/array_utils.cc \
                    $(CERES_SRC_PATH)/generated/schur_eliminator_2_3_d.cc \
                    $(CERES_SRC_PATH)/generated/schur_eliminator_2_4_3.cc \
                    $(CERES_SRC_PATH)/generated/schur_eliminator_2_4_4.cc \
+                   $(CERES_SRC_PATH)/generated/schur_eliminator_2_4_6.cc \
                    $(CERES_SRC_PATH)/generated/schur_eliminator_2_4_8.cc \
                    $(CERES_SRC_PATH)/generated/schur_eliminator_2_4_9.cc \
                    $(CERES_SRC_PATH)/generated/schur_eliminator_2_4_d.cc \
@@ -230,6 +241,7 @@ LOCAL_SRC_FILES := $(CERES_SRC_PATH)/array_utils.cc \
                    $(CERES_SRC_PATH)/generated/partitioned_matrix_view_2_3_d.cc \
                    $(CERES_SRC_PATH)/generated/partitioned_matrix_view_2_4_3.cc \
                    $(CERES_SRC_PATH)/generated/partitioned_matrix_view_2_4_4.cc \
+                   $(CERES_SRC_PATH)/generated/partitioned_matrix_view_2_4_6.cc \
                    $(CERES_SRC_PATH)/generated/partitioned_matrix_view_2_4_8.cc \
                    $(CERES_SRC_PATH)/generated/partitioned_matrix_view_2_4_9.cc \
                    $(CERES_SRC_PATH)/generated/partitioned_matrix_view_2_4_d.cc \

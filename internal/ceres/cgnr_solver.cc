@@ -42,13 +42,14 @@ namespace ceres {
 namespace internal {
 
 CgnrSolver::CgnrSolver(const LinearSolver::Options& options)
-  : options_(options),
-    preconditioner_(NULL) {
+  : options_(options) {
   if (options_.preconditioner_type != JACOBI &&
       options_.preconditioner_type != IDENTITY) {
     LOG(FATAL) << "CGNR only supports IDENTITY and JACOBI preconditioners.";
   }
 }
+
+CgnrSolver::~CgnrSolver() {}
 
 LinearSolver::Summary CgnrSolver::SolveImpl(
     BlockSparseMatrix* A,

@@ -34,7 +34,6 @@
 
 #include <vector>
 #include "ceres/internal/port.h"
-#include "ceres/internal/scoped_ptr.h"
 #include "ceres/internal/disable_warnings.h"
 
 namespace ceres {
@@ -222,14 +221,14 @@ class CERES_EXPORT QuaternionParameterization : public LocalParameterization {
 //
 // Plus(x, delta) = [sin(|delta|) delta / |delta|, cos(|delta|)] * x
 // with * being the quaternion multiplication operator.
-class EigenQuaternionParameterization : public ceres::LocalParameterization {
+class CERES_EXPORT EigenQuaternionParameterization
+    : public ceres::LocalParameterization {
  public:
   virtual ~EigenQuaternionParameterization() {}
   virtual bool Plus(const double* x,
                     const double* delta,
                     double* x_plus_delta) const;
-  virtual bool ComputeJacobian(const double* x,
-                               double* jacobian) const;
+  virtual bool ComputeJacobian(const double* x, double* jacobian) const;
   virtual int GlobalSize() const { return 4; }
   virtual int LocalSize() const { return 3; }
 };

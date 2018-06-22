@@ -1,5 +1,5 @@
 // Ceres Solver - A fast non-linear least squares minimizer
-// Copyright 2015 Google Inc. All rights reserved.
+// Copyright 2017 Google Inc. All rights reserved.
 // http://ceres-solver.org/
 //
 // Redistribution and use in source and binary forms, with or without
@@ -45,7 +45,6 @@
 #define CERES_PUBLIC_COST_FUNCTION_H_
 
 #include <vector>
-#include "ceres/internal/macros.h"
 #include "ceres/internal/port.h"
 #include "ceres/types.h"
 #include "ceres/internal/disable_warnings.h"
@@ -55,7 +54,7 @@ namespace ceres {
 // This class implements the computation of the cost (a.k.a. residual) terms as
 // a function of the input (control) variables, and is the interface for users
 // to describe their least squares problem to Ceres. In other words, this is the
-// modelling layer between users and the Ceres optimizer. The signature of the
+// modeling layer between users and the Ceres optimizer. The signature of the
 // function (number and sizes of input parameter blocks and number of outputs)
 // is stored in parameter_block_sizes_ and num_residuals_ respectively. User
 // code inheriting from this class is expected to set these two members with the
@@ -64,6 +63,8 @@ namespace ceres {
 class CERES_EXPORT CostFunction {
  public:
   CostFunction() : num_residuals_(0) {}
+  CostFunction(const CostFunction&) = delete;
+  void operator=(const CostFunction&) = delete;
 
   virtual ~CostFunction() {}
 
@@ -137,7 +138,6 @@ class CERES_EXPORT CostFunction {
   // number of outputs (residuals).
   std::vector<int32> parameter_block_sizes_;
   int num_residuals_;
-  CERES_DISALLOW_COPY_AND_ASSIGN(CostFunction);
 };
 
 }  // namespace ceres

@@ -29,14 +29,9 @@
 // Author: Sameer Agarwal (sameeragarwal@google.com)
 //         David Gallup (dgallup@google.com)
 
-// This include must come before any #ifndef check on Ceres compile options.
-#include "ceres/internal/port.h"
-
-#ifndef CERES_NO_SUITESPARSE
-
 #include "ceres/canonical_views_clustering.h"
 
-#include "ceres/collections_port.h"
+#include <unordered_map>
 #include "ceres/graph.h"
 #include "gtest/gtest.h"
 
@@ -79,7 +74,7 @@ class CanonicalViewsTest : public ::testing::Test {
 
   CanonicalViewsClusteringOptions options_;
   std::vector<int> centers_;
-  HashMap<int, int> membership_;
+  std::unordered_map<int, int> membership_;
 };
 
 TEST_F(CanonicalViewsTest, ComputeCanonicalViewsTest) {
@@ -146,5 +141,3 @@ TEST_F(CanonicalViewsTest, SimilarityPenaltyTest) {
 
 }  // namespace internal
 }  // namespace ceres
-
-#endif  // CERES_NO_SUITESPARSE

@@ -34,15 +34,14 @@
 #ifndef CERES_PUBLIC_GRADIENT_CHECKER_H_
 #define CERES_PUBLIC_GRADIENT_CHECKER_H_
 
-#include <vector>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "ceres/cost_function.h"
 #include "ceres/dynamic_numeric_diff_cost_function.h"
 #include "ceres/internal/eigen.h"
 #include "ceres/internal/fixed_array.h"
-#include "ceres/internal/macros.h"
-#include "ceres/internal/scoped_ptr.h"
 #include "ceres/local_parameterization.h"
 #include "glog/logging.h"
 
@@ -64,7 +63,7 @@ namespace ceres {
 //
 // How to use: Fill in an array of pointers to parameter blocks for your
 // CostFunction, and then call Probe(). Check that the return value is 'true'.
-class GradientChecker {
+class CERES_EXPORT GradientChecker {
  public:
   // This will not take ownership of the cost function or local
   // parameterizations.
@@ -80,7 +79,7 @@ class GradientChecker {
       const NumericDiffOptions& options);
 
   // Contains results from a call to Probe for later inspection.
-  struct ProbeResults {
+  struct CERES_EXPORT ProbeResults {
     // The return value of the cost function.
     bool return_value;
 
@@ -137,11 +136,13 @@ class GradientChecker {
              ProbeResults* results) const;
 
  private:
-  CERES_DISALLOW_IMPLICIT_CONSTRUCTORS(GradientChecker);
+  GradientChecker() = delete;
+  GradientChecker(const GradientChecker&) = delete;
+  void operator=(const GradientChecker&) = delete;
 
   std::vector<const LocalParameterization*> local_parameterizations_;
   const CostFunction* function_;
-  internal::scoped_ptr<CostFunction> finite_diff_cost_function_;
+  std::unique_ptr<CostFunction> finite_diff_cost_function_;
 };
 
 }  // namespace ceres

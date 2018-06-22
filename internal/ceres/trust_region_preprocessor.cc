@@ -33,6 +33,7 @@
 #include <numeric>
 #include <string>
 #include "ceres/callbacks.h"
+#include "ceres/context_impl.h"
 #include "ceres/evaluator.h"
 #include "ceres/linear_solver.h"
 #include "ceres/minimizer.h"
@@ -110,7 +111,7 @@ void AlternateLinearSolverAndPreconditionerForSchurTypeLinearSolver(
 // For Schur type and SPARSE_NORMAL_CHOLESKY linear solvers, reorder
 // the program to reduce fill-in and increase cache coherency.
 bool ReorderProgram(PreprocessedProblem* pp) {
-  Solver::Options& options = pp->options;
+  const Solver::Options& options = pp->options;
   if (IsSchurType(options.linear_solver_type)) {
     return ReorderProgramForSchurTypeLinearSolver(
         options.linear_solver_type,
@@ -120,6 +121,7 @@ bool ReorderProgram(PreprocessedProblem* pp) {
         pp->reduced_program.get(),
         &pp->error);
   }
+
 
   if (options.linear_solver_type == SPARSE_NORMAL_CHOLESKY &&
       !options.dynamic_sparsity) {
@@ -191,29 +193,46 @@ bool SetupLinearSolver(PreprocessedProblem* pp) {
   pp->linear_solver_options.use_explicit_schur_complement =
       options.use_explicit_schur_complement;
   pp->linear_solver_options.dynamic_sparsity = options.dynamic_sparsity;
-  pp->linear_solver_options.num_threads = options.num_linear_solver_threads;
-
-  // Ignore user's postordering preferences and force it to be true if
-  // cholmod_camd is not available. This ensures that the linear
-  // solver does not assume that a fill-reducing pre-ordering has been
-  // done.
+  pp->linear_solver_options.use_mixed_precision_solves =
+      options.use_mixed_precision_solves;
+  pp->linear_solver_options.max_num_refinement_iterations =
+      options.max_num_refinement_iterations;
+  pp->linear_solver_options.num_threads = options.num_threads;
   pp->linear_solver_options.use_postordering = options.use_postordering;
-  if (options.linear_solver_type == SPARSE_SCHUR &&
-      options.sparse_linear_algebra_library_type == SUITE_SPARSE &&
-      !SuiteSparse::IsConstrainedApproximateMinimumDegreeOrderingAvailable()) {
-    pp->linear_solver_options.use_postordering = true;
-  }
+  pp->linear_solver_options.context = pp->problem->context();
 
-  OrderingToGroupSizes(options.linear_solver_ordering.get(),
-                       &pp->linear_solver_options.elimination_groups);
+  if (IsSchurType(pp->linear_solver_options.type)) {
+    OrderingToGroupSizes(options.linear_solver_ordering.get(),
+                         &pp->linear_solver_options.elimination_groups);
 
-  // Schur type solvers expect at least two elimination groups. If
-  // there is only one elimination group, then it is guaranteed that
-  // this group only contains e_blocks. Thus we add a dummy
-  // elimination group with zero blocks in it.
-  if (IsSchurType(pp->linear_solver_options.type) &&
-      pp->linear_solver_options.elimination_groups.size() == 1) {
-    pp->linear_solver_options.elimination_groups.push_back(0);
+    // Schur type solvers expect at least two elimination groups. If
+    // there is only one elimination group, then it is guaranteed that
+    // this group only contains e_blocks. Thus we add a dummy
+    // elimination group with zero blocks in it.
+    if (pp->linear_solver_options.elimination_groups.size() == 1) {
+      pp->linear_solver_options.elimination_groups.push_back(0);
+    }
+
+    if (options.linear_solver_type == SPARSE_SCHUR) {
+      // When using SPARSE_SCHUR, we ignore the user's postordering
+      // preferences in certain cases.
+      //
+      // 1. SUITE_SPARSE is the sparse linear algebra library requested
+      //    but cholmod_camd is not available.
+      // 2. CX_SPARSE is the sparse linear algebra library requested.
+      //
+      // This ensures that the linear solver does not assume that a
+      // fill-reducing pre-ordering has been done.
+      //
+      // TODO(sameeragarwal): Implement the reordering of parameter
+      // blocks for CX_SPARSE.
+      if ((options.sparse_linear_algebra_library_type == SUITE_SPARSE &&
+           !SuiteSparse::
+           IsConstrainedApproximateMinimumDegreeOrderingAvailable()) ||
+          (options.sparse_linear_algebra_library_type == CX_SPARSE)) {
+        pp->linear_solver_options.use_postordering = true;
+      }
+    }
   }
 
   pp->linear_solver.reset(LinearSolver::Create(pp->linear_solver_options));
@@ -236,6 +255,8 @@ bool SetupEvaluator(PreprocessedProblem* pp) {
 
   pp->evaluator_options.num_threads = options.num_threads;
   pp->evaluator_options.dynamic_sparsity = options.dynamic_sparsity;
+  pp->evaluator_options.context = pp->problem->context();
+  pp->evaluator_options.evaluation_callback = options.evaluation_callback;
   pp->evaluator.reset(Evaluator::Create(pp->evaluator_options,
                                         pp->reduced_program.get(),
                                         &pp->error));
@@ -283,7 +304,8 @@ bool SetupInnerIterationMinimizer(PreprocessedProblem* pp) {
         CoordinateDescentMinimizer::CreateOrdering(*pp->reduced_program));
   }
 
-  pp->inner_iteration_minimizer.reset(new CoordinateDescentMinimizer);
+  pp->inner_iteration_minimizer.reset(
+      new CoordinateDescentMinimizer(pp->problem->context()));
   return pp->inner_iteration_minimizer->Init(*pp->reduced_program,
                                              pp->problem->parameter_map(),
                                              *options.inner_iteration_ordering,

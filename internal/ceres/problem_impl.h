@@ -40,12 +40,12 @@
 #define CERES_PUBLIC_PROBLEM_IMPL_H_
 
 #include <map>
+#include <memory>
+#include <unordered_set>
 #include <vector>
 
-#include "ceres/internal/macros.h"
+#include "ceres/context_impl.h"
 #include "ceres/internal/port.h"
-#include "ceres/internal/scoped_ptr.h"
-#include "ceres/collections_port.h"
 #include "ceres/problem.h"
 #include "ceres/types.h"
 
@@ -64,10 +64,14 @@ class ResidualBlock;
 class ProblemImpl {
  public:
   typedef std::map<double*, ParameterBlock*> ParameterMap;
-  typedef HashSet<ResidualBlock*> ResidualBlockSet;
+  typedef std::unordered_set<ResidualBlock*> ResidualBlockSet;
+  typedef std::map<CostFunction*, int> CostFunctionRefCount;
+  typedef std::map<LossFunction*, int> LossFunctionRefCount;
 
   ProblemImpl();
   explicit ProblemImpl(const Problem::Options& options);
+  ProblemImpl(const ProblemImpl&) = delete;
+  void operator=(const ProblemImpl&) = delete;
 
   ~ProblemImpl();
 
@@ -179,15 +183,11 @@ class ProblemImpl {
     return residual_block_set_;
   }
 
+  ContextImpl* context() { return context_impl_; }
+
  private:
   ParameterBlock* InternalAddParameterBlock(double* values, int size);
   void InternalRemoveResidualBlock(ResidualBlock* residual_block);
-
-  bool InternalEvaluate(Program* program,
-                        double* cost,
-                        std::vector<double>* residuals,
-                        std::vector<double>* gradient,
-                        CRSMatrix* jacobian);
 
   // Delete the arguments in question. These differ from the Remove* functions
   // in that they do not clean up references to the block to delete; they
@@ -200,26 +200,33 @@ class ProblemImpl {
 
   const Problem::Options options_;
 
+  bool context_impl_owned_;
+  ContextImpl* context_impl_;
+
   // The mapping from user pointers to parameter blocks.
-  std::map<double*, ParameterBlock*> parameter_block_map_;
+  ParameterMap parameter_block_map_;
 
   // Iff enable_fast_removal is enabled, contains the current residual blocks.
   ResidualBlockSet residual_block_set_;
 
   // The actual parameter and residual blocks.
-  internal::scoped_ptr<internal::Program> program_;
+  std::unique_ptr<internal::Program> program_;
 
-  // When removing residual and parameter blocks, cost/loss functions and
-  // parameterizations have ambiguous ownership. Instead of scanning the entire
-  // problem to see if the cost/loss/parameterization is shared with other
-  // residual or parameter blocks, buffer them until destruction.
+  // When removing parameter blocks, parameterizations have ambiguous
+  // ownership. Instead of scanning the entire problem to see if the
+  // parameterization is shared with other parameter blocks, buffer
+  // them until destruction.
   //
   // TODO(keir): See if it makes sense to use sets instead.
-  std::vector<CostFunction*> cost_functions_to_delete_;
-  std::vector<LossFunction*> loss_functions_to_delete_;
   std::vector<LocalParameterization*> local_parameterizations_to_delete_;
 
-  CERES_DISALLOW_COPY_AND_ASSIGN(ProblemImpl);
+  // For each cost function and loss function in the problem, a count
+  // of the number of residual blocks that refer to them. When the
+  // count goes to zero and the problem owns these objects, they are
+  // destroyed.
+  CostFunctionRefCount cost_function_ref_count_;
+  LossFunctionRefCount loss_function_ref_count_;
+  std::vector<double*> residual_parameters_;
 };
 
 }  // namespace internal
