@@ -59,7 +59,7 @@ using std::vector;
 // Trivial cost function that accepts a single argument.
 class UnaryCostFunction : public CostFunction {
  public:
-  UnaryCostFunction(int num_residuals, int32 parameter_block_size) {
+  UnaryCostFunction(int num_residuals, int32_t parameter_block_size) {
     set_num_residuals(num_residuals);
     mutable_parameter_block_sizes()->push_back(parameter_block_size);
   }
@@ -79,8 +79,8 @@ class UnaryCostFunction : public CostFunction {
 class BinaryCostFunction: public CostFunction {
  public:
   BinaryCostFunction(int num_residuals,
-                     int32 parameter_block1_size,
-                     int32 parameter_block2_size) {
+                     int32_t parameter_block1_size,
+                     int32_t parameter_block2_size) {
     set_num_residuals(num_residuals);
     mutable_parameter_block_sizes()->push_back(parameter_block1_size);
     mutable_parameter_block_sizes()->push_back(parameter_block2_size);
@@ -100,9 +100,9 @@ class BinaryCostFunction: public CostFunction {
 class TernaryCostFunction: public CostFunction {
  public:
   TernaryCostFunction(int num_residuals,
-                      int32 parameter_block1_size,
-                      int32 parameter_block2_size,
-                      int32 parameter_block3_size) {
+                      int32_t parameter_block1_size,
+                      int32_t parameter_block2_size,
+                      int32_t parameter_block3_size) {
     set_num_residuals(num_residuals);
     mutable_parameter_block_sizes()->push_back(parameter_block1_size);
     mutable_parameter_block_sizes()->push_back(parameter_block2_size);
@@ -1525,6 +1525,60 @@ TEST_F(ProblemEvaluateTest, LocalParameterization) {
                                                           constant_parameters));
 
   CheckAllEvaluationCombinations(Problem::EvaluateOptions(), expected);
+}
+
+TEST(Problem, SetAndGetParameterLowerBound) {
+  Problem problem;
+  double x[] = {1.0, 2.0};
+  problem.AddParameterBlock(x, 2);
+
+  EXPECT_EQ(problem.GetParameterLowerBound(x, 0),
+            -std::numeric_limits<double>::max());
+  EXPECT_EQ(problem.GetParameterLowerBound(x, 1),
+            -std::numeric_limits<double>::max());
+
+  problem.SetParameterLowerBound(x, 0, -1.0);
+  EXPECT_EQ(problem.GetParameterLowerBound(x, 0), -1.0);
+  EXPECT_EQ(problem.GetParameterLowerBound(x, 1),
+            -std::numeric_limits<double>::max());
+
+  problem.SetParameterLowerBound(x, 0, -2.0);
+  EXPECT_EQ(problem.GetParameterLowerBound(x, 0), -2.0);
+  EXPECT_EQ(problem.GetParameterLowerBound(x, 1),
+            -std::numeric_limits<double>::max());
+
+  problem.SetParameterLowerBound(x, 0, -std::numeric_limits<double>::max());
+  EXPECT_EQ(problem.GetParameterLowerBound(x, 0),
+            -std::numeric_limits<double>::max());
+  EXPECT_EQ(problem.GetParameterLowerBound(x, 1),
+            -std::numeric_limits<double>::max());
+}
+
+TEST(Problem, SetAndGetParameterUpperBound) {
+  Problem problem;
+  double x[] = {1.0, 2.0};
+  problem.AddParameterBlock(x, 2);
+
+  EXPECT_EQ(problem.GetParameterUpperBound(x, 0),
+            std::numeric_limits<double>::max());
+  EXPECT_EQ(problem.GetParameterUpperBound(x, 1),
+            std::numeric_limits<double>::max());
+
+  problem.SetParameterUpperBound(x, 0, -1.0);
+  EXPECT_EQ(problem.GetParameterUpperBound(x, 0), -1.0);
+  EXPECT_EQ(problem.GetParameterUpperBound(x, 1),
+            std::numeric_limits<double>::max());
+
+  problem.SetParameterUpperBound(x, 0, -2.0);
+  EXPECT_EQ(problem.GetParameterUpperBound(x, 0), -2.0);
+  EXPECT_EQ(problem.GetParameterUpperBound(x, 1),
+            std::numeric_limits<double>::max());
+
+  problem.SetParameterUpperBound(x, 0, std::numeric_limits<double>::max());
+  EXPECT_EQ(problem.GetParameterUpperBound(x, 0),
+            std::numeric_limits<double>::max());
+  EXPECT_EQ(problem.GetParameterUpperBound(x, 1),
+            std::numeric_limits<double>::max());
 }
 
 }  // namespace internal

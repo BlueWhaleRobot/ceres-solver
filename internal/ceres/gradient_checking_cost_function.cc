@@ -33,6 +33,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <numeric>
 #include <string>
 #include <vector>
@@ -74,7 +75,7 @@ class GradientCheckingCostFunction : public CostFunction {
         extra_info_(extra_info),
         callback_(callback) {
     CHECK_NOTNULL(callback_);
-    const vector<int32>& parameter_block_sizes =
+    const vector<int32_t>& parameter_block_sizes =
         function->parameter_block_sizes();
     *mutable_parameter_block_sizes() = parameter_block_sizes;
     set_num_residuals(function->num_residuals());
@@ -106,7 +107,7 @@ class GradientCheckingCostFunction : public CostFunction {
     MatrixRef(residuals, num_residuals, 1) = results.residuals;
 
     // Copy the original jacobian blocks into the jacobians array.
-    const vector<int32>& block_sizes = function_->parameter_block_sizes();
+    const vector<int32_t>& block_sizes = function_->parameter_block_sizes();
     for (int k = 0; k < block_sizes.size(); k++) {
       if (jacobians[k] != NULL) {
         MatrixRef(jacobians[k],
@@ -210,6 +211,17 @@ ProblemImpl* CreateGradientCheckingProblemImpl(
     if (parameter_block->IsConstant()) {
       gradient_checking_problem_impl->SetParameterBlockConstant(
           parameter_block->mutable_user_state());
+    }
+
+    for (int i = 0; i <  parameter_block->Size(); ++i) {
+      gradient_checking_problem_impl->SetParameterUpperBound(
+          parameter_block->mutable_user_state(),
+          i,
+          parameter_block->UpperBound(i));
+      gradient_checking_problem_impl->SetParameterLowerBound(
+          parameter_block->mutable_user_state(),
+          i,
+          parameter_block->LowerBound(i));
     }
   }
 

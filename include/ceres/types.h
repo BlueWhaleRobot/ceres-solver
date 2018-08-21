@@ -44,10 +44,6 @@
 
 namespace ceres {
 
-// Basic integer types. These typedefs are in the Ceres namespace to avoid
-// conflicts with other packages having similar typedefs.
-typedef int   int32;
-
 // Argument type used in interfaces that can optionally take ownership
 // of a passed in argument. If TAKE_OWNERSHIP is passed, the called
 // object takes ownership of the pointer argument, and will call
@@ -158,6 +154,9 @@ enum SparseLinearAlgebraLibraryType {
   // Eigen's sparse linear algebra routines. In particular Ceres uses
   // the Simplicial LDLT routines.
   EIGEN_SPARSE,
+
+  // Apple's Accelerate framework sparse linear algebra routines.
+  ACCELERATE_SPARSE,
 
   // No sparse linear solver should be used.  This does not necessarily
   // imply that Ceres was built without any sparse library, although that

@@ -135,6 +135,10 @@ option(MINIGLOG "Use a stripped down version of glog." OFF)
 option(GFLAGS "Enable Google Flags." ON)
 option(SUITESPARSE "Enable SuiteSparse." ON)
 option(CXSPARSE "Enable CXSparse." ON)
+if (APPLE)
+  option(ACCELERATESPARSE
+    "Enable use of sparse solvers in Apple's Accelerate framework." ON)
+endif()
 option(LAPACK "Enable use of LAPACK directly within Ceres." ON)
 # Template specializations for the Schur complement based solvers. If
 # compile time, binary size or compiler performance is an issue, you
@@ -153,6 +157,9 @@ option(BUILD_DOCUMENTATION "Build User's Guide (html)" OFF)
 option(BUILD_EXAMPLES "Build examples" ON)
 option(BUILD_BENCHMARKS "Build Ceres benchmarking suite" ON)
 option(BUILD_SHARED_LIBS "Build Ceres as a shared library." OFF)
+if (ANDROID)
+  option(ANDROID_STRIP_DEBUG_SYMBOLS "Strip debug symbols from Android builds (reduces file sizes)" ON)
+endif()
 if (MSVC)
   option(MSVC_USE_STATIC_CRT
     "MS Visual Studio: Use static C-Run Time Library in place of shared." OFF)
@@ -331,15 +338,52 @@ else (CXSPARSE)
                          CXSPARSE_LIBRARY)
 endif (CXSPARSE)
 
+if (ACCELERATESPARSE)
+  find_package(AccelerateSparse)
+  if (AccelerateSparse_FOUND)
+    message("-- Found Apple's Accelerate framework with sparse solvers, "
+      "building with Accelerate sparse support.")
+  else()
+    message("-- Failed to find Apple's Accelerate framework with sparse solvers, "
+      "building without Accelerate sparse support.")
+    update_cache_variable(ACCELERATESPARSE OFF)
+    list(APPEND CERES_COMPILE_OPTIONS CERES_NO_ACCELERATE_SPARSE)
+  endif()
+else()
+  message("-- Building without Apple's Accelerate sparse support.")
+  list(APPEND CERES_COMPILE_OPTIONS CERES_NO_ACCELERATE_SPARSE)
+  mark_as_advanced(FORCE AccelerateSparse_INCLUDE_DIR
+                         AccelerateSparse_LIBRARY)
+endif()
+
 # Ensure that the user understands they have disabled all sparse libraries.
-if (NOT SUITESPARSE AND NOT CXSPARSE AND NOT EIGENSPARSE)
+if (NOT SUITESPARSE AND NOT CXSPARSE AND NOT EIGENSPARSE AND NOT ACCELERATESPARSE)
   message("   ===============================================================")
   message("   Compiling without any sparse library: SuiteSparse, CXSparse ")
-  message("   & Eigen (Sparse) are all disabled or unavailable.  No sparse ")
-  message("   linear solvers (SPARSE_NORMAL_CHOLESKY & SPARSE_SCHUR)")
+  message("   EigenSparse & Apple's Accelerate are all disabled or unavailable.  ")
+  message("   No sparse linear solvers (SPARSE_NORMAL_CHOLESKY & SPARSE_SCHUR)")
   message("   will be available when Ceres is used.")
   message("   ===============================================================")
-endif(NOT SUITESPARSE AND NOT CXSPARSE AND NOT EIGENSPARSE)
+endif()
+
+# ANDROID define is set by the Android CMake toolchain file.
+if (ANDROID)
+  message("  ================================================================")
+  if (ANDROID_STRIP_DEBUG_SYMBOLS)
+    # Strip debug information unconditionally to avoid +200MB library file sizes.
+    set( CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -s" )
+    set( CMAKE_SHARED_LINKER_FLAGS  "${CMAKE_SHARED_LINKER_FLAGS} -s" )
+    message("  Stripping debug information from Android build of Ceres library ")
+    message("  to avoid +200MB library files.")
+  else()
+    message("  Warning: not stripping debug information from Android build of ")
+    message("  Ceres library.  This will result in a large (+200MB) library.")
+  endif()
+  message("")
+  message("  You can control whether debug information is stripped via the ")
+  message("  ANDROID_STRIP_DEBUG_SYMBOLS CMake option when configuring Ceres.")
+  message("  ================================================================")
+endif()
 
 # GFlags.
 if (GFLAGS)
@@ -427,35 +471,6 @@ if (BUILD_BENCHMARKS)
   endif()
   mark_as_advanced(benchmark_DIR)
 endif()
-
-include_directories(
-  include
-  internal
-  internal/ceres
-  ${GLOG_INCLUDE_DIRS})
-
-# Eigen SparseQR generates various compiler warnings related to unused and
-# uninitialised local variables.  To avoid having to individually suppress these
-# warnings around the #include statments for Eigen headers across all GCC/Clang
-# versions, we tell CMake to treat Eigen headers as system headers.  This
-# results in all compiler warnings from them being suppressed.
-#
-# Note that this is *not* propagated to clients, ie CERES_INCLUDE_DIRS
-# used by clients after find_package(Ceres) does not identify Eigen as
-# as system headers.
-include_directories(SYSTEM ${EIGEN_INCLUDE_DIRS})
-
-if (SUITESPARSE)
-  include_directories(${SUITESPARSE_INCLUDE_DIRS})
-endif (SUITESPARSE)
-
-if (CXSPARSE)
-  include_directories(${CXSPARSE_INCLUDE_DIRS})
-endif (CXSPARSE)
-
-if (GFLAGS)
-  include_directories(${GFLAGS_INCLUDE_DIRS})
-endif (GFLAGS)
 
 if (BUILD_SHARED_LIBS)
   message("-- Building Ceres as a shared library.")
@@ -603,12 +618,6 @@ list(REMOVE_DUPLICATES CERES_COMPILE_OPTIONS)
 include(CreateCeresConfig)
 create_ceres_config("${CERES_COMPILE_OPTIONS}"
   ${Ceres_BINARY_DIR}/config/ceres/internal)
-# Force the location containing the configured config.h to the front of the
-# include_directories list (by default it is appended to the back) to ensure
-# that if the user has an installed version of Ceres in the same location as one
-# of the dependencies (e.g. /usr/local) that we find the config.h we just
-# configured, not the (older) installed config.h.
-include_directories(BEFORE ${Ceres_BINARY_DIR}/config)
 
 add_subdirectory(internal/ceres)
 

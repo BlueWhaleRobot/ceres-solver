@@ -33,9 +33,6 @@
 #include "ceres/internal/config.h"
 
 #include "Eigen/Core"
-#ifdef CERES_USE_TBB
-#include "tbb/tbb_stddef.h"
-#endif  // CERES_USE_TBB
 #include "ceres/internal/port.h"
 #include "ceres/solver_utils.h"
 #include "ceres/version.h"
@@ -47,10 +44,6 @@ namespace internal {
   CERES_TO_STRING(EIGEN_WORLD_VERSION) "."                           \
   CERES_TO_STRING(EIGEN_MAJOR_VERSION) "."                           \
   CERES_TO_STRING(EIGEN_MINOR_VERSION)
-
-#define CERES_TBB_VERSION                          \
-  CERES_TO_STRING(TBB_VERSION_MAJOR) "."           \
-  CERES_TO_STRING(TBB_VERSION_MINOR)
 
 std::string VersionString() {
   std::string value = std::string(CERES_VERSION_STRING);
@@ -70,6 +63,10 @@ std::string VersionString() {
   value += "-cxsparse-(" + std::string(CERES_CXSPARSE_VERSION) + ")";
 #endif
 
+#ifndef CERES_NO_ACCELERATE_SPARSE
+  value += "-acceleratesparse";
+#endif
+
 #ifdef CERES_USE_EIGEN_SPARSE
   value += "-eigensparse";
 #endif
@@ -82,12 +79,6 @@ std::string VersionString() {
   value += "-openmp";
 #else
   value += "-no_openmp";
-#endif
-
-#ifdef CERES_USE_TBB
-  value += "-tbb-(" + std::string(CERES_TBB_VERSION) + ")";
-#else
-  value += "-no_tbb";
 #endif
 
 #ifdef CERES_NO_CUSTOM_BLAS

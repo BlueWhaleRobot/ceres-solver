@@ -143,7 +143,7 @@ void SparseCholeskySolverUnitTest(
   lhs->ToDenseMatrix(&eigen_lhs);
   EXPECT_NEAR((actual - expected).norm() / actual.norm(),
               0.0,
-              std::numeric_limits<double>::epsilon() * 10)
+              std::numeric_limits<double>::epsilon() * 20)
       << "\n"
       << eigen_lhs;
 }
@@ -199,6 +199,22 @@ INSTANTIATE_TEST_CASE_P(SuiteSparseCholesky,
 INSTANTIATE_TEST_CASE_P(CXSparseCholesky,
                         SparseCholeskyTest,
                         ::testing::Combine(::testing::Values(CX_SPARSE),
+                                           ::testing::Values(AMD, NATURAL),
+                                           ::testing::Values(true, false)),
+                        ParamInfoToString);
+#endif
+
+#ifndef CERES_NO_ACCELERATE_SPARSE
+INSTANTIATE_TEST_CASE_P(AccelerateSparseCholesky,
+                        SparseCholeskyTest,
+                        ::testing::Combine(::testing::Values(ACCELERATE_SPARSE),
+                                           ::testing::Values(AMD, NATURAL),
+                                           ::testing::Values(true, false)),
+                        ParamInfoToString);
+
+INSTANTIATE_TEST_CASE_P(AccelerateSparseCholeskySingle,
+                        SparseCholeskyTest,
+                        ::testing::Combine(::testing::Values(ACCELERATE_SPARSE),
                                            ::testing::Values(AMD, NATURAL),
                                            ::testing::Values(true, false)),
                         ParamInfoToString);

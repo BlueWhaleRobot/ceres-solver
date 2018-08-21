@@ -41,7 +41,7 @@ optional. For details on customizing the build process, see
     more details.
 
 - `CMake <http://www.cmake.org>`_ 3.5 or later.
-  **Required on all platforms except for Android.**
+  **Required on all platforms except for legacy Android.**
 
 - `glog <https://github.com/google/glog>`_ 0.3.1 or
   later. **Recommended**
@@ -56,17 +56,16 @@ optional. For details on customizing the build process, see
   to get more and more verbose and detailed information about Ceres
   internals.
 
-  Unfortunately, the current version of `google-glog
-  <https://github.com/google/glog>`_ does not build using the Android
-  NDK. So, Ceres also ships with a minimal replacement of ``glog``
-  called ``miniglog`` that can be enabled with the ``MINIGLOG`` build
-  option.
+  Ceres also ships with a minimal replacement of ``glog`` called
+  ``miniglog`` that can be enabled with the ``MINIGLOG`` build option.
+  ``miniglog`` is supplied for platforms which do not support the full
+  version of ``glog``.
 
-  So, in an attempt to reduce dependencies, it is tempting to use
-  `miniglog` on platforms other than Android. While there is nothing
-  preventing the user from doing so, we strongly recommend against
-  it. ``miniglog`` has worse performance than ``glog`` and is much
-  harder to control and use.
+  In an attempt to reduce dependencies, it may be tempting to use
+  ``miniglog`` on platforms which already support ``glog``. While
+  there is nothing preventing the user from doing so, we strongly
+  recommend against it. ``miniglog`` has worse performance than
+  ``glog`` and is much harder to control and use.
 
   .. NOTE ::
 
@@ -90,14 +89,14 @@ optional. For details on customizing the build process, see
   no dependencies on ``LAPACK`` and ``BLAS``. This makes for a simpler
   build process and a smaller binary. **Optional**
 
+- `Apple's Accelerate sparse solvers <https://developer.apple.com/documentation/accelerate/sparse_solvers>`_.
+  As of Xcode 9.0, Apple's Accelerate framework includes support for
+  solving sparse linear systems across macOS, iOS et al. **Optional**
+
 - `BLAS <http://www.netlib.org/blas/>`_ and `LAPACK
   <http://www.netlib.org/lapack/>`_ routines are needed by
   ``SuiteSparse``, and optionally used by Ceres directly for some
   operations.
-
-- `TBB <https://www.threadingbuildingblocks.org/>`_ is a C++11 template
-  library for parallel programming that optionally can be used as an
-  alternative to OpenMP. **Optional**
 
   On ``UNIX`` OSes other than Mac OS X we recommend `ATLAS
   <http://math-atlas.sourceforge.net/>`_, which includes ``BLAS`` and
@@ -495,9 +494,57 @@ Notes:
 Android
 =======
 
-Download the ``Android NDK`` version ``r9d`` or later. Run
-``ndk-build`` from inside the ``jni`` directory. Use the
-``libceres.a`` that gets created.
+.. NOTE::
+
+    You will need Android NDK r15 or higher to build Ceres solver.
+
+To build Ceres for Android, we need to force ``CMake`` to find
+the toolchains from the Android NDK instead of using the standard
+ones. For example, assuming you have specified ``$NDK_DIR``:
+
+.. code-block:: bash
+
+    cmake \
+    -DCMAKE_TOOLCHAIN_FILE=\
+        $NDK_DIR/build/cmake/android.toolchain.cmake \
+    -DEIGEN_INCLUDE_DIR=/path/to/eigen/header \
+    -DANDROID_ABI=armeabi-v7a \
+    -DANDROID_STL=c++_shared \
+    -DANDROID_NATIVE_API_LEVEL=android-24 \
+    -DBUILD_SHARED_LIBS=ON \
+    -DMINIGLOG=ON \
+    <PATH_TO_CERES_SOURCE>
+
+You can build for any Android STL or ABI, but the c++_shared STL
+and the armeabi-v7a or arm64-v8a ABI are recommended for 32bit
+and 64bit architectures, respectively. Several API levels may
+be supported, but it is recommended that you use the highest
+level that is suitable for your Android project.
+
+.. NOTE::
+
+    You must always use the same API level and STL library for
+    your Android project and the Ceres binaries.
+
+After building, you get a ``libceres.so`` library, which you can
+link in your Android build system by using a
+``PREBUILT_SHARED_LIBRARY`` target in your build script.
+
+If you are building any Ceres samples and would like to verify
+your library, you will need to place them in an executable public
+directory together with ``libceres.so`` on your Android device
+(e.g. in /data/local/tmp) and ensure that the STL library from
+your NDK is present in that same directory. You may then execute
+the sample by running for example:
+
+.. code-block:: bash
+    adb shell
+    cd /data/local/tmp
+    LD_LIBRARY_PATH=/data/local/tmp ./helloworld
+
+Note that any solvers or other shared dependencies you include in
+your project must also be present in your android build config and
+your test directory on Android.
 
 .. _section-ios:
 
@@ -637,7 +684,13 @@ Options controlling Ceres configuration
 
       CXSparse is licensed under the LGPL.
 
-#. ``EIGENSPARSE [Default: OFF]``: By default, Ceres will not use
+#. ``ACCELERATESPARSE [Default: ON]``: By default, Ceres will link to
+   Apple's Accelerate framework directly if a version of it is detected
+   which supports solving sparse linear systems.  Note that on Apple OSs
+   Accelerate usually also provides the BLAS/LAPACK implementations and
+   so would be linked against irrespective of the value of ``ACCELERATESPARSE``.
+
+#. ``EIGENSPARSE [Default: ON]``: By default, Ceres will not use
    Eigen's sparse Cholesky factorization.
 
    .. NOTE::
@@ -664,16 +717,10 @@ Options controlling Ceres configuration
    gains in the ``SPARSE_SCHUR`` solver, you can disable some of the
    template specializations by turning this ``OFF``.
 
-#. ``CERES_THREADING_MODEL [Default: CXX11_THREADS > OPENMP > TBB > NO_THREADS]``:
+#. ``CERES_THREADING_MODEL [Default: CXX11_THREADS > OPENMP > NO_THREADS]``:
    Multi-threading backend Ceres should be compiled with.  This will
    automatically be set to only accept the available subset of threading
    options in the CMake GUI.
-
-   .. NOTE::
-
-      Up to and including version 4.4, TBB was licensed under
-      GPL/Commercial terms.  From 2017.x versions onwards, TBB is licensed under
-      the Apache 2.0 license (and commerical terms).
 
 #. ``BUILD_SHARED_LIBS [Default: OFF]``: By default Ceres is built as
    a static library, turn this ``ON`` to instead build Ceres as a
@@ -803,12 +850,11 @@ used:
 
 .. code-block:: cmake
 
-    cmake_minimum_required(VERSION 2.8)
+    cmake_minimum_required(VERSION 3.5)
 
     project(helloworld)
 
     find_package(Ceres REQUIRED)
-    include_directories(${CERES_INCLUDE_DIRS})
 
     # helloworld
     add_executable(helloworld helloworld.cc)
@@ -821,6 +867,13 @@ directory containing the installed ``CeresConfig.cmake`` file
 (e.g. ``/usr/local/share/Ceres``).  If Ceres was exported, then
 ``Ceres_DIR`` should be the path to the exported Ceres build
 directory.
+
+  .. NOTE ::
+
+     You do not need to call include_directories(${CERES_INCLUDE_DIRS})
+     as the exported Ceres CMake target already contains the definitions
+     of its public include directories which will be automatically
+     included by CMake when compiling a target that links against Ceres.
 
 Specify Ceres components
 -------------------------------------
@@ -842,20 +895,19 @@ The Ceres components which can be specified are:
 
 #. ``CXSparse``: Ceres built with CXSparse (``CXSPARSE=ON``).
 
+#. ``AccelerateSparse``: Ceres built with Apple's Accelerate sparse solvers (``ACCELERATESPARSE=ON``).
+
 #. ``EigenSparse``: Ceres built with Eigen's sparse Cholesky factorization
    (``EIGENSPARSE=ON``).
 
 #. ``SparseLinearAlgebraLibrary``: Ceres built with *at least one* sparse linear
    algebra library.  This is equivalent to ``SuiteSparse`` **OR** ``CXSparse``
-   **OR** ``EigenSparse``.
+   **OR** ``AccelerateSparse``  **OR** ``EigenSparse``.
 
 #. ``SchurSpecializations``: Ceres built with Schur specializations
    (``SCHUR_SPECIALIZATIONS=ON``).
 
 #. ``OpenMP``: Ceres built with OpenMP (``CERES_THREADING_MODEL=OPENMP``).
-
-#. ``TBB``: Ceres built with Intel Thread Building Blocks (TBB)
-   (``CERES_THREADING_MODEL=TBB``).
 
 #. ``Multithreading``: Ceres built with *a* multithreading library.
    This is equivalent to (``CERES_THREAD != NO_THREADS``).

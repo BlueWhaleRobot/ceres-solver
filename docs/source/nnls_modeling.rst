@@ -1661,13 +1661,27 @@ Instances
 
    Set the lower bound for the parameter at position `index` in the
    parameter block corresponding to `values`. By default the lower
-   bound is :math:`-\infty`.
+   bound is ``-std::numeric_limits<double>::max()``, which is treated
+   by the solver as the same as :math:`-\infty`.
 
 .. function:: void Problem::SetParameterUpperBound(double* values, int index, double upper_bound)
 
    Set the upper bound for the parameter at position `index` in the
    parameter block corresponding to `values`. By default the value is
-   :math:`\infty`.
+   ``std::numeric_limits<double>::max()``, which is treated by the
+   solver as the same as :math:`\infty`.
+
+.. function:: double Problem::GetParameterLowerBound(double* values, int index)
+
+   Get the lower bound for the parameter with position `index`. If the
+   parameter is not bounded by the user, then its lower bound is
+   ``-std::numeric_limits<double>::max()``.
+
+.. function:: double Problem::GetParameterUpperBound(double* values, int index)
+
+   Get the upper bound for the parameter with position `index`. If the
+   parameter is not bounded by the user, then its upper bound is
+   ``std::numeric_limits<double>::max()``.
 
 .. function:: int Problem::NumParameterBlocks() const
 
@@ -1811,7 +1825,7 @@ Instances
    performed. This vector determines the order in which the residuals
    occur, and how the rows of the jacobian are ordered. If
    residual_blocks is empty, then it is assumed to be equal to the
-   vector containing all the parameter blocks.
+   vector containing all the residual blocks.
 
 .. member:: bool Problem::EvaluateOptions::apply_loss_function
 
