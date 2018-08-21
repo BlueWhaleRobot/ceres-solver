@@ -81,7 +81,7 @@ include(UpdateCacheVariable)
 
 # Set up the git hook to make Gerrit Change-Id: lines in commit messages.
 include(AddGerritCommitHook)
-add_gerrit_commit_hook(${Ceres_SOURCE_DIR} ${Ceres_BINARY_DIR})
+# add_gerrit_commit_hook(${Ceres_SOURCE_DIR} ${Ceres_BINARY_DIR})
 
 # On OS X, add the Homebrew prefix to the set of prefixes searched by
 # CMake in find_path & find_library.  This should ensure that we can
